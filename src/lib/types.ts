@@ -28,6 +28,7 @@ export interface Item {
   status: "pending" | "bought" | "unavailable" | "out_of_stock";
   note: string | null;
   quantity: number;
+  weight_g: number | null; // 商品重量（克），選填
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +48,20 @@ export interface AiResponse {
 export interface ExchangeRate {
   rate: number; // 1 JPY = ? TWD
   updated_at: string;
+}
+
+// 可編輯的商品欄位
+export interface EditableItemFields {
+  ai_product_name?: string;
+  ai_product_name_ja?: string;
+  ai_brand?: string;
+  ai_price_jpy?: number;
+  ai_price_twd?: number;
+  ai_where_to_buy?: string[];
+  ai_product_url?: string;
+  quantity?: number;
+  weight_g?: number | null;
+  note?: string | null;
 }
 
 // 狀態的中文對照

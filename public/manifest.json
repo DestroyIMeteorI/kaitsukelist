@@ -1,0 +1,20 @@
+{
+  "name": "買い付けリスト",
+  "short_name": "代購清單",
+  "description": "日本代購清單 — AI 幫你找到想買的東西",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdf2f8",
+  "theme_color": "#ec4899",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "utilities"],
+  "lang": "zh-TW"
+}

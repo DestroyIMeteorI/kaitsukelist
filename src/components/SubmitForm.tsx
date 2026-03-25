@@ -6,9 +6,10 @@ import type { AiResponse } from "@/lib/types";
 interface SubmitFormProps {
   onResult: (data: AiResponse, exchangeRate: number, inputText?: string, imageUrl?: string) => void;
   userId: string;
+  disabled?: boolean; // 離線時停用
 }
 
-export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
+export default function SubmitForm({ onResult, userId, disabled }: SubmitFormProps) {
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -103,8 +104,10 @@ export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
     }
   }
 
+  const isDisabled = disabled || loading;
+
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+    <div className={`rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-opacity ${disabled ? "opacity-50" : ""}`}>
       {/* 文字輸入 */}
       <textarea
         value={text}
@@ -115,7 +118,7 @@ export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
         placeholder="輸入想買的商品名稱或描述&#10;例：樂敦眼藥水、白色戀人、資生堂防曬乳"
         className="w-full resize-none rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-base leading-relaxed transition-colors placeholder:text-gray-400 focus:border-sakura-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sakura-100"
         rows={2}
-        disabled={loading}
+        disabled={isDisabled}
       />
 
       {/* 圖片預覽 */}
@@ -124,11 +127,11 @@ export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
           <img
             src={imagePreview}
             alt="商品圖片預覽"
-            className="h-24 w-24 rounded-xl border border-gray-200 object-cover"
+            className="h-30 w-30 rounded-xl border border-gray-200 object-cover"
           />
           <button
             onClick={clearImage}
-            className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-xs text-white shadow-md"
+            className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-gray-800 text-xs text-white shadow-md"
           >
             ✕
           </button>
@@ -136,11 +139,11 @@ export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
       )}
 
       {/* 操作按鈕列 */}
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3 flex items-stretch gap-2">
         {/* 拍照/選圖按鈕 */}
-        <label className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition-colors hover:border-sakura-300 hover:bg-sakura-50 active:scale-[0.98]">
+        <label className={`flex min-h-[48px] cursor-pointer items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 transition-colors hover:border-sakura-300 hover:bg-sakura-50 active:scale-[0.98] ${isDisabled ? "pointer-events-none" : ""}`}>
           <svg
-            className="h-4 w-4"
+            className="h-4 w-4 shrink-0"
             fill="none"
             viewBox="0 0 24 24"
             strokeWidth={1.5}
@@ -157,7 +160,7 @@ export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
               d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"
             />
           </svg>
-          拍照 / 選圖
+          {imageFile ? "更換圖片" : "拍照 / 選圖"}
           <input
             ref={fileInputRef}
             type="file"
@@ -165,15 +168,15 @@ export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
             capture="environment"
             onChange={handleImageSelect}
             className="hidden"
-            disabled={loading}
+            disabled={isDisabled}
           />
         </label>
 
         {/* 送出辨識按鈕 */}
         <button
           onClick={handleSubmit}
-          disabled={loading || (!text.trim() && !imageFile)}
-          className="ml-auto flex items-center gap-1.5 rounded-xl bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-sakura-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={isDisabled || (!text.trim() && !imageFile)}
+          className="ml-auto flex min-h-[48px] items-center gap-1.5 rounded-xl bg-sakura-500 px-5 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-sakura-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? (
             <>
@@ -221,7 +224,9 @@ export default function SubmitForm({ onResult, userId }: SubmitFormProps) {
 
       {/* 錯誤訊息 */}
       {error && (
-        <p className="mt-2 text-sm text-red-500">⚠️ {error}</p>
+        <p className="mt-2.5 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+          ⚠️ {error}
+        </p>
       )}
     </div>
   );

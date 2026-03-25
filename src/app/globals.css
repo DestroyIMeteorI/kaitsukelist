@@ -8,7 +8,18 @@
   --color-sakura-400: #f472b6;
   --color-sakura-500: #ec4899;
   --color-sakura-600: #db2777;
-  --font-sans: "Noto Sans TC", "Noto Sans JP", system-ui, sans-serif;
+  --color-sakura-700: #be185d;
+  --font-sans: var(--font-noto-sans-tc), var(--font-noto-sans-jp), "Noto Sans TC", "Noto Sans JP", system-ui, sans-serif;
+}
+
+/* 防止 iOS Safari 在 input focus 時自動縮放頁面
+ * iOS 對 font-size < 16px 的 input 會觸發 zoom
+ * max(16px, 1em)：確保至少 16px，視覺上仍可用 text-sm 覆蓋（transform）
+ */
+input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+textarea,
+select {
+  font-size: max(16px, 1em);
 }
 
 /* Smooth page transitions */
@@ -19,7 +30,7 @@ html {
 
 body {
   min-height: 100dvh;
-  background: linear-gradient(180deg, #fdf2f8 0%, #ffffff 30%);
+  background: linear-gradient(135deg, #fdf2f8 0%, #fff7fb 40%, #ffffff 70%, #f0f9ff 100%);
 }
 
 /* Custom scrollbar */
@@ -31,14 +42,14 @@ body {
   border-radius: 4px;
 }
 
-/* Loading shimmer animation */
+/* Loading shimmer animation — sakura tint */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
 
 .shimmer {
-  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background: linear-gradient(90deg, #fdf2f8 25%, #fce7f3 50%, #fdf2f8 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -50,5 +61,84 @@ body {
 }
 
 .animate-slide-up {
-  animation: slideUp 0.4s ease-out forwards;
+  animation: slideUp 0.35s ease-out forwards;
+}
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Scale in (modal / card pop) */
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.25s ease-out forwards;
+}
+
+/* Slide in from right (toast / panel) */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out forwards;
+}
+
+/* Slide out to right (toast dismiss) */
+@keyframes slideOutRight {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(24px); }
+}
+
+.animate-slide-out-right {
+  animation: slideOutRight 0.25s ease-in forwards;
+}
+
+/* ===== Safe Area Inset Support =====
+ * viewport-fit=cover 讓內容延伸到 Dynamic Island / 打孔相機下方
+ * 以下 class 確保重要 UI 元素不被遮擋
+ */
+
+/* Sticky header：自動在狀態列下方加 padding（僅 PWA 全螢幕生效） */
+.header-safe {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem); /* 0.75rem = py-3 */
+  padding-bottom: 0.75rem;
+}
+
+/* Fixed banner（OfflineBanner）：推到安全區域以下 */
+.banner-safe {
+  top: env(safe-area-inset-top, 0px);
+  padding-top: 0.625rem; /* py-2.5 */
+  padding-bottom: 0.625rem;
+}
+
+/* 頁面容器底部：預留手勢導覽列空間 */
+.page-safe-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2rem); /* 2rem = pb-8 */
+}
+
+/* 首頁全畫面版面需要頂部安全區域 */
+.min-h-dvh-safe {
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Card hover lift — apply on card wrapper */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(236, 72, 153, 0.12), 0 4px 8px -2px rgba(0,0,0,0.06);
 }

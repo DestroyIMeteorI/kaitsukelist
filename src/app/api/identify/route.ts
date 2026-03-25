@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import type { AiResponse } from "@/lib/types";
 
 // === AI 商品辨識 API ===
 // 白話：使用者傳文字或圖片過來，這裡會叫 Gemini AI 去辨識是什麼商品
@@ -48,6 +49,62 @@ function buildPrompt(inputText: string | null, exchangeRate: number) {
 如果圖片模糊或無法辨識，confidence 填 low。`;
 }
 
+// 僅在失敗重試時使用，去掉所有多餘說明，只要純 JSON
+function buildRetryPrompt(inputText: string | null, exchangeRate: number) {
+  return `只輸出一個 JSON 物件，不含任何說明文字。格式如下：
+{"product_name_zh":"","product_name_ja":"","brand":"","estimated_price_jpy":0,"estimated_price_twd":0,"where_to_buy":[],"buy_url":"","description":"","confidence":"medium"}
+
+匯率：1 JPY = ${exchangeRate} TWD
+${inputText ? `商品：${inputText}` : "請辨識圖片中的商品"}`;
+}
+
+// 從 AI 回覆的原始物件中提取並補足必要欄位，避免前端因缺欄位崩潰
+function normalizeAiResponse(raw: Record<string, unknown>, exchangeRate: number): AiResponse {
+  const priceJpy = Number(raw.estimated_price_jpy) || 0;
+  const priceTwd = Number(raw.estimated_price_twd) || Math.round(priceJpy * exchangeRate);
+  const rawConfidence = String(raw.confidence || "");
+  const confidence = (["high", "medium", "low"].includes(rawConfidence)
+    ? rawConfidence
+    : "medium") as AiResponse["confidence"];
+
+  return {
+    product_name_zh: String(raw.product_name_zh || raw.name || "未知商品"),
+    product_name_ja: String(raw.product_name_ja || ""),
+    brand: String(raw.brand || ""),
+    estimated_price_jpy: priceJpy,
+    estimated_price_twd: priceTwd,
+    where_to_buy: Array.isArray(raw.where_to_buy) ? raw.where_to_buy.map(String) : [],
+    buy_url: String(raw.buy_url || ""),
+    description: String(raw.description || ""),
+    confidence,
+  };
+}
+
+// 嘗試從字串中解析 JSON（含 markdown 清理與 regex fallback）
+function tryParseJson(text: string): Record<string, unknown> | null {
+  const cleaned = text
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  // 先嘗試直接解析
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // ignore
+  }
+
+  // 找第一個 {...} 區塊
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -79,58 +136,50 @@ export async function POST(req: NextRequest) {
       generationConfig: {
         temperature: 0.3, // 低溫度 = 更精確、較少創意
         maxOutputTokens: 1024,
+        responseMimeType: "application/json", // 強制回傳純 JSON，避免 AI 加入多餘說明文字
       },
     });
 
-    const prompt = buildPrompt(inputText, exchangeRate);
-
-    // 根據有沒有圖片，用不同的方式呼叫 AI
-    let result;
-
+    // 把圖片轉 base64（如有）
+    let imagePart: { inlineData: { mimeType: string; data: string } } | null = null;
     if (imageFile) {
-      // 有圖片：把圖片轉成 base64 送給 AI
       const bytes = await imageFile.arrayBuffer();
       const base64 = Buffer.from(bytes).toString("base64");
-      const mimeType = imageFile.type || "image/jpeg";
-
-      result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            mimeType,
-            data: base64,
-          },
-        },
-      ]);
-    } else {
-      // 純文字
-      result = await model.generateContent(prompt);
+      imagePart = { inlineData: { mimeType: imageFile.type || "image/jpeg", data: base64 } };
     }
 
-    const responseText = result.response.text();
+    // 呼叫 Gemini，最多嘗試 2 次
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const prompt =
+        attempt === 1
+          ? buildPrompt(inputText, exchangeRate)
+          : buildRetryPrompt(inputText, exchangeRate);
 
-    // 嘗試解析 AI 回覆的 JSON
-    let aiData;
-    try {
-      // 清理可能的 markdown 包裹
-      const cleaned = responseText
-        .replace(/```json\s*/g, "")
-        .replace(/```\s*/g, "")
-        .trim();
-      aiData = JSON.parse(cleaned);
-    } catch {
-      // 如果 JSON 解析失敗，回傳原始文字讓前端處理
-      return NextResponse.json({
-        success: false,
-        raw_response: responseText,
-        error: "AI 回覆格式異常，請重試",
-      });
+      const contents = imagePart ? [prompt, imagePart] : [prompt];
+      const result = await model.generateContent(contents);
+      const responseText = result.response.text();
+
+      const raw = tryParseJson(responseText);
+
+      if (raw) {
+        const aiData = normalizeAiResponse(raw, exchangeRate);
+        return NextResponse.json({
+          success: true,
+          data: aiData,
+          exchange_rate: exchangeRate,
+        });
+      }
+
+      // 第一次失敗：記錄 log 後繼續重試
+      if (attempt === 1) {
+        console.warn("AI 第一次回覆解析失敗，正在重試。原始回覆：", responseText.slice(0, 200));
+      }
     }
 
+    // 兩次都失敗
     return NextResponse.json({
-      success: true,
-      data: aiData,
-      exchange_rate: exchangeRate,
+      success: false,
+      error: "AI 回覆格式異常，請重試",
     });
   } catch (error: any) {
     console.error("AI 辨識錯誤:", error);
