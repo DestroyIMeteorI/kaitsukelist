@@ -56,13 +56,20 @@ export default function AdminPage() {
     return () => subscription.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [loginLoading, setLoginLoading] = useState(false);
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (authError) { setError("帳號或密碼錯誤，請確認後再試"); return; }
-    setAuthenticated(true);
-    loadItems();
+    setLoginLoading(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (authError) { setError("帳號或密碼錯誤，請確認後再試"); return; }
+      setAuthenticated(true);
+      loadItems();
+    } finally {
+      setLoginLoading(false);
+    }
   }
 
   async function handleLogout() {
@@ -251,9 +258,9 @@ export default function AdminPage() {
               className="w-full rounded-xl border border-gray-200 px-4 py-3 text-base tracking-widest shadow-sm focus:border-sakura-400 focus:outline-none focus:ring-2 focus:ring-sakura-200"
               autoComplete="current-password" />
             {error && <p className="text-center text-sm text-red-500">{error}</p>}
-            <button type="submit" disabled={!email.trim() || !password}
+            <button type="submit" disabled={loginLoading || !email.trim() || !password}
               className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-gray-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
-              進入管理後台
+              {loginLoading ? "登入中..." : "進入管理後台"}
             </button>
           </form>
           <button onClick={() => router.push("/")}
@@ -271,11 +278,9 @@ export default function AdminPage() {
       {/* Header */}
       <header className="header-safe sticky top-0 z-10 border-b border-gray-100 bg-white/80 px-4 backdrop-blur-md">
         <div className="flex items-center justify-between">
-          <button onClick={() => router.push("/")} className="group text-left" aria-label="回首頁">
-            <h1 className="text-lg font-bold text-gray-900 transition-colors group-hover:text-sakura-500">
-              🔐 管理後台
-            </h1>
-          </button>
+          <h1 className="text-lg font-bold text-gray-900">
+            🔐 管理後台
+          </h1>
           <div className="flex gap-2">
             <button onClick={() => { if (activeTab === "users") loadUsers(); else loadItems(); }}
               className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:bg-gray-200">
