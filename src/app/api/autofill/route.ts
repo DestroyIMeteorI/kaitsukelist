@@ -201,17 +201,19 @@ export async function POST(req: NextRequest) {
     }
 
     const errMsg = lastError instanceof Error ? lastError.message : String(lastError);
+    const isQuota = errMsg.includes("429") || errMsg.includes("quota");
     console.error("AI 補齊錯誤（重試後仍失敗）:", lastError);
     return NextResponse.json(
-      { success: false, error: "AI 補齊失敗，請稍後再試", debug: errMsg },
-      { status: 500 }
+      { success: false, error: isQuota ? "AI 額度已用完，請稍後再試（每日會重置）" : "AI 補齊失敗，請稍後再試" },
+      { status: isQuota ? 429 : 500 }
     );
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
+    const isQuota = errMsg.includes("429") || errMsg.includes("quota");
     console.error("AI 補齊錯誤:", error);
     return NextResponse.json(
-      { success: false, error: "AI 補齊失敗，請稍後再試", debug: errMsg },
-      { status: 500 }
+      { success: false, error: isQuota ? "AI 額度已用完，請稍後再試（每日會重置）" : "AI 補齊失敗，請稍後再試" },
+      { status: isQuota ? 429 : 500 }
     );
   }
 }

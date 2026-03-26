@@ -435,6 +435,17 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("AI 辨識錯誤:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const isQuota = errMsg.includes("429") || errMsg.includes("quota");
+    if (isQuota) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "AI 額度已用完，請稍後再試（每日會重置）",
+        },
+        { status: 429 }
+      );
+    }
     return NextResponse.json(
       {
         success: false,
