@@ -71,6 +71,25 @@ npm run test:e2e:headed   # 有頭模式（看瀏覽器操作）
 - `e2e/admin.spec.ts` — 管理後台（12 個案例）
 - 所有外部 API（Supabase、Gemini、匯率）均以 `page.route()` mock，無需真實金鑰
 
+## AI 辨識流程（2026-03-26 重構）
+- 支援三種輸入：文字、圖片、商品網址（URL）
+- URL 輸入時 server-side fetch 頁面內容；被擋時從 URL 結構抽取線索
+- Gemini 2.5 Flash + `responseSchema` 強制結構化 JSON 輸出
+- AI 自動列出商品所有品項（`variants` 陣列），使用者可選擇
+- 搜尋連結（Amazon/樂天/Google）取代 AI 幻覺 URL
+- 支援手動修改商品名稱與價格
+- `📝 手動新增` 模式可跳過 AI，直接輸入商品資訊
+
+## 管理後台功能（2026-03-26）
+- 帳號管理分頁：改名、重設 PIN、刪除帳號
+- 「✓ 已買」時可輸入實際購買金額（日幣 + 台幣換算）和數量
+- items 表有 `actual_price_jpy`、`actual_quantity` 欄位
+
+## 監控與部署
+- `/api/health` 端點供 UptimeRobot 監控（每 5 分鐘 ping）
+- 同時防止 Supabase free tier 因 7 天無活動暫停
+- Vercel App 可手機遠端 Redeploy
+
 ## Supabase Auth 設定（管理員）
 管理員帳號需在 Supabase Dashboard 手動建立：
 1. 進入 Supabase 專案 → **Authentication** → **Users**
