@@ -8,9 +8,10 @@ const nextConfig: NextConfig = {
   compress: true,
 
   images: {
-    // 允許所有 HTTPS 來源（Supabase Storage 等外部圖片）
+    // 只允許 Supabase Storage 的圖片
     remotePatterns: [
-      { protocol: "https", hostname: "**" },
+      { protocol: "https", hostname: "*.supabase.co" },
+      { protocol: "https", hostname: "*.supabase.in" },
     ],
     // 現代圖片格式優先順序
     formats: ["image/avif", "image/webp"],

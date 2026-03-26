@@ -174,7 +174,7 @@ export async function updateItem(itemId: string, fields: EditableItemFields) {
 // 更新商品狀態（管理員用）
 export async function updateItemStatus(
   itemId: string,
-  status: string,
+  status: "pending" | "bought" | "unavailable" | "out_of_stock",
   extra?: { note?: string; actual_price_jpy?: number; actual_quantity?: number }
 ) {
   const { error } = await supabase

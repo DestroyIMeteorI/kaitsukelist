@@ -11,6 +11,27 @@ function isUrl(text: string): boolean {
   return /^https?:\/\//i.test(text.trim());
 }
 
+// 允許 fetch 的購物網站域名白名單（防止 SSRF）
+const ALLOWED_HOSTS = [
+  "amazon.co.jp", "www.amazon.co.jp",
+  "rakuten.co.jp", "item.rakuten.co.jp", "search.rakuten.co.jp", "www.rakuten.co.jp",
+  "shopping.yahoo.co.jp", "store.shopping.yahoo.co.jp", "paypaymall.yahoo.co.jp",
+  "kakaku.com", "www.kakaku.com",
+  "yodobashi.com", "www.yodobashi.com",
+  "biccamera.com", "www.biccamera.com",
+  "matsukiyo.co.jp", "www.matsukiyo.co.jp",
+  "donki.com", "www.donki.com",
+];
+
+function isAllowedUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return ALLOWED_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+
 // 從 URL 路徑抽取有用的線索（店鋪名、商品 ID、路徑關鍵字）
 function extractUrlHints(url: string): string {
   try {
@@ -50,6 +71,11 @@ function extractUrlHints(url: string): string {
 // 從網頁抓取商品資訊（server-side fetch），抓不到則用 URL 線索
 async function fetchUrlContent(url: string): Promise<string> {
   const urlHints = extractUrlHints(url);
+
+  // SSRF 防護：只允許白名單域名
+  if (!isAllowedUrl(url)) {
+    return buildUrlFallback(url, urlHints);
+  }
 
   try {
     const res = await fetch(url, {
@@ -407,12 +433,12 @@ export async function POST(req: NextRequest) {
       success: false,
       error: "AI 回覆格式異常，請重試",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("AI 辨識錯誤:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "AI 辨識失敗，請稍後再試",
+        error: "AI 辨識失敗，請稍後再試",
       },
       { status: 500 }
     );
