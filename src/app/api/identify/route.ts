@@ -11,8 +11,46 @@ function isUrl(text: string): boolean {
   return /^https?:\/\//i.test(text.trim());
 }
 
-// 從網頁抓取商品資訊（server-side fetch）
+// 從 URL 路徑抽取有用的線索（店鋪名、商品 ID、路徑關鍵字）
+function extractUrlHints(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname;
+    const pathParts = u.pathname.split("/").filter(Boolean);
+
+    // 識別平台
+    let platform = "";
+    let hints = "";
+    if (host.includes("rakuten.co.jp")) {
+      platform = "樂天市場 (Rakuten)";
+      if (pathParts[0]) hints += `店鋪: ${pathParts[0]}\n`;
+      if (pathParts[1]) hints += `商品ID: ${pathParts[1]}\n`;
+    } else if (host.includes("amazon.co.jp")) {
+      platform = "Amazon Japan";
+      const dpIndex = pathParts.indexOf("dp");
+      if (dpIndex >= 0 && pathParts[dpIndex + 1]) {
+        hints += `ASIN: ${pathParts[dpIndex + 1]}\n`;
+      }
+      // Amazon URL 通常第一段是商品名（URL-encoded 日文）
+      if (pathParts[0] && pathParts[0] !== "dp" && pathParts[0] !== "gp") {
+        hints += `商品名: ${decodeURIComponent(pathParts[0]).replace(/-/g, " ")}\n`;
+      }
+    } else if (host.includes("yahoo.co.jp")) {
+      platform = "Yahoo! ショッピング";
+    } else {
+      platform = host;
+    }
+
+    return `平台: ${platform}\n${hints}`.trim();
+  } catch {
+    return "";
+  }
+}
+
+// 從網頁抓取商品資訊（server-side fetch），抓不到則用 URL 線索
 async function fetchUrlContent(url: string): Promise<string> {
+  const urlHints = extractUrlHints(url);
+
   try {
     const res = await fetch(url, {
       headers: {
@@ -23,7 +61,9 @@ async function fetchUrlContent(url: string): Promise<string> {
       signal: AbortSignal.timeout(8000),
     });
 
-    if (!res.ok) return `無法存取此網頁（HTTP ${res.status}）`;
+    if (!res.ok) {
+      return buildUrlFallback(url, urlHints);
+    }
 
     const html = await res.text();
 
@@ -43,7 +83,7 @@ async function fetchUrlContent(url: string): Promise<string> {
         /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i
       )?.[1] || "";
 
-    // 抽取頁面文字（去 HTML tag，取前 3000 字）
+    // 抽取頁面文字
     const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     const bodyText = bodyMatch
       ? bodyMatch[1]
@@ -55,13 +95,29 @@ async function fetchUrlContent(url: string): Promise<string> {
           .slice(0, 3000)
       : "";
 
+    // 如果內容太少（被 bot 擋住），使用 URL 線索 fallback
+    const usefulContent = (ogTitle || title || "").length + bodyText.length;
+    if (usefulContent < 100) {
+      return buildUrlFallback(url, urlHints);
+    }
+
     return `以下是商品網頁的內容，請從中辨識商品資訊：
 網頁標題: ${ogTitle || title}
 網頁描述: ${ogDesc || metaDesc}
 頁面內容: ${bodyText}`;
   } catch {
-    return "無法存取此網頁，請根據網址中的關鍵字推測商品。";
+    return buildUrlFallback(url, urlHints);
   }
+}
+
+function buildUrlFallback(url: string, urlHints: string): string {
+  return `使用者提供了一個日本購物網站的商品連結，但網頁無法直接存取（被防爬蟲機制擋住）。
+請根據網址結構和你的知識，盡力辨識這個商品。
+
+商品網址: ${url}
+${urlHints}
+
+請根據以上線索推測商品資訊。如果不太確定，confidence 填 medium 並在 description 中說明。`;
 }
 
 // 建立辨識用的 prompt

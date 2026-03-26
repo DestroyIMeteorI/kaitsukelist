@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import SubmitForm from "@/components/SubmitForm";
 import AiResultCard from "@/components/AiResultCard";
+import ManualAddForm from "@/components/ManualAddForm";
 import ProductCard from "@/components/ProductCard";
 import OfflineBanner from "@/components/OfflineBanner";
 import Toast, { useToast } from "@/components/Toast";
@@ -12,6 +13,7 @@ import type { AiResponse, Item, User, ExchangeRate, EditableItemFields } from "@
 const CACHE_KEY_PREFIX = "kaitsuke_items_";
 
 type SortKey = "newest" | "oldest" | "price_high" | "price_low";
+type AddMode = "ai" | "manual";
 
 export default function ListPage() {
   const router = useRouter();
@@ -22,6 +24,7 @@ export default function ListPage() {
   const [isOnline, setIsOnline] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("newest");
+  const [addMode, setAddMode] = useState<AddMode>("ai");
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
   const [pendingResult, setPendingResult] = useState<{
@@ -150,6 +153,49 @@ export default function ListPage() {
     }
   }
 
+  async function handleManualAdd(item: {
+    productName: string;
+    priceJpy: number;
+    priceTwd: number;
+    brand?: string;
+    imageUrl?: string;
+    weightG?: number;
+    quantity: number;
+  }) {
+    if (!user) return;
+    try {
+      const { addItem } = await import("@/lib/supabase");
+      const newItem = await addItem({
+        user_id: user.id,
+        input_text: null,
+        input_image_url: item.imageUrl || null,
+        ai_product_name: item.productName,
+        ai_product_name_ja: null,
+        ai_brand: item.brand || null,
+        ai_price_jpy: item.priceJpy,
+        ai_price_twd: item.priceTwd,
+        ai_exchange_rate: exchangeRate?.rate ?? 0.22,
+        ai_where_to_buy: null,
+        ai_product_url: null,
+        ai_description: null,
+        ai_confidence: null,
+        ai_summary: null,
+        quantity: item.quantity,
+        weight_g: item.weightG ?? null,
+      });
+      const updatedItems = [newItem, ...items];
+      setItems(updatedItems);
+      showToast("已手動加入清單！", "success");
+      if (user) {
+        const name = localStorage.getItem("userName") || "";
+        localStorage.setItem(`${CACHE_KEY_PREFIX}${name}`, JSON.stringify({ user, items: updatedItems }));
+      }
+    } catch (err) {
+      console.error("手動新增失敗:", err);
+      showToast("新增失敗，請重試", "error");
+    }
+  }
+
   async function handleItemEdit(itemId: string, fields: EditableItemFields) {
     try {
       const { updateItem } = await import("@/lib/supabase");
@@ -251,12 +297,32 @@ export default function ListPage() {
           </div>
         )}
 
-        {/* 提交表單 */}
+        {/* 新增模式切換 + 表單 */}
         <div>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
-            {isOnline ? "✨ 想買什麼？告訴 AI" : "✨ 想買什麼？（離線中暫時停用）"}
-          </h2>
-          {user && <SubmitForm onResult={handleAiResult} userId={user.id} disabled={!isOnline} />}
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+              {addMode === "ai"
+                ? isOnline ? "✨ 想買什麼？告訴 AI" : "✨ 想買什麼？（離線中暫時停用）"
+                : "📝 手動新增商品"}
+            </h2>
+            <button
+              onClick={() => setAddMode(addMode === "ai" ? "manual" : "ai")}
+              className="rounded-lg bg-gray-100 px-2.5 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700"
+            >
+              {addMode === "ai" ? "📝 手動新增" : "✨ AI 辨識"}
+            </button>
+          </div>
+          {addMode === "ai" && user && (
+            <SubmitForm onResult={handleAiResult} userId={user.id} disabled={!isOnline} />
+          )}
+          {addMode === "manual" && user && exchangeRate && (
+            <ManualAddForm
+              userId={user.id}
+              exchangeRate={exchangeRate.rate}
+              onAdd={handleManualAdd}
+              disabled={!isOnline}
+            />
+          )}
         </div>
 
         {/* AI 辨識結果 */}
