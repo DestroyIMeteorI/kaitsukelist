@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_TC, Noto_Sans_JP } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 // next/font 自托管字型：build time 下載並由 Vercel CDN 提供
@@ -56,7 +57,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-TW" className={`${notoSansTC.variable} ${notoSansJP.variable}`}>
-      <body className="font-sans text-gray-800 antialiased">{children}</body>
+      <body className="font-sans text-gray-800 antialiased">
+        {children}
+        <SpeedInsights />
+      </body>
     </html>
   );
 }

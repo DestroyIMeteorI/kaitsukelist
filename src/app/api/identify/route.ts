@@ -329,6 +329,148 @@ function isClothingSite(hostname: string): boolean {
   return /uniqlo|gu-global|zozotown|abc-mart/.test(hostname);
 }
 
+// === UNIQLO 官方 API 抓取（繞過 SPA 無法 scrape 的問題）===
+
+interface UniqloL2 {
+  color: {
+    code: string;
+    displayCode: string;
+    name: string;
+    image: Array<{ type: string; url: string }>;
+  };
+  size: {
+    code: string;
+    displayCode: string;
+    name: string;
+  };
+  prices: {
+    base: { value: number; currency: string };
+    promo: { value: number; currency: string } | null;
+  };
+}
+
+/**
+ * 從 UNIQLO 官方 API 精準取得商品資訊。
+ * UNIQLO JP 是 SPA，一般 HTML scraping 無法拿到真實資料，
+ * 但其前端 API 是公開的 REST endpoint，可直接呼叫。
+ */
+async function fetchUniqloProduct(url: string): Promise<{
+  productName: string;
+  priceJpy: number;
+  brand: string;
+  description: string;
+  imageUrl: string | null;
+  variants: Array<{ name: string; price_jpy: number }>;
+  productCode: string;
+} | null> {
+  try {
+    const u = new URL(url);
+    const pathParts = u.pathname.split('/').filter(Boolean);
+
+    // 路徑格式：/jp/ja/products/{fullCode}/{priceGroup}
+    const productsIdx = pathParts.indexOf('products');
+    if (productsIdx < 0 || !pathParts[productsIdx + 1]) return null;
+
+    const fullCode = pathParts[productsIdx + 1]; // e.g., "E471809-000"
+    const priceGroup = pathParts[productsIdx + 2] || '00';
+
+    // 取純數字商品番号，用於圖片 URL fallback
+    const numericCode = fullCode.match(/E?(\d{6,})/)?.[1];
+    if (!numericCode) return null;
+
+    const selectedColor = u.searchParams.get('colorDisplayCode'); // e.g., "09"
+    const selectedSize = u.searchParams.get('sizeDisplayCode');   // e.g., "004"
+
+    const apiBase = 'https://www.uniqlo.com/jp/api/commerce/v5/ja';
+    const fetchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'ja,zh-TW;q=0.9,en;q=0.8',
+      'Referer': 'https://www.uniqlo.com/',
+      'Origin': 'https://www.uniqlo.com',
+    };
+
+    // 並行呼叫商品詳情 API + 規格（顏色/尺寸）API
+    const [productRes, l2sRes] = await Promise.all([
+      fetch(`${apiBase}/products/${fullCode}`, {
+        headers: fetchHeaders,
+        signal: AbortSignal.timeout(8000),
+      }),
+      fetch(`${apiBase}/products/${fullCode}/price-groups/${priceGroup}/l2s?httpFailure=true`, {
+        headers: fetchHeaders,
+        signal: AbortSignal.timeout(8000),
+      }),
+    ]);
+
+    if (!l2sRes.ok) return null;
+
+    const l2sJson = await l2sRes.json();
+    const l2s: UniqloL2[] = l2sJson?.result?.l2s || [];
+    if (l2s.length === 0) return null;
+
+    // 取商品名稱與描述
+    let productName = '';
+    let description = '';
+    if (productRes.ok) {
+      const productJson = await productRes.json();
+      const item = productJson?.result?.items?.[0];
+      productName = String(item?.name || '');
+      description = String(item?.longDescription || item?.catchCopy || '').slice(0, 200);
+    }
+
+    // 篩選指定顏色的 L2s；若無指定，取第一個顏色
+    const firstColorCode = l2s[0]?.color?.displayCode;
+    const colorL2s = selectedColor
+      ? l2s.filter((l) => l.color.displayCode === selectedColor)
+      : l2s.filter((l) => l.color.displayCode === firstColorCode);
+    const targetL2s = colorL2s.length > 0 ? colorL2s : l2s.slice(0, 20);
+
+    // 依 displayCode 排序尺寸，去重後建立 variants
+    const seen = new Set<string>();
+    const variants: Array<{ name: string; price_jpy: number }> = [];
+    for (const l of [...targetL2s].sort((a, b) => a.size.displayCode.localeCompare(b.size.displayCode))) {
+      const key = l.size.displayCode;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const price = l.prices?.promo?.value ?? l.prices?.base?.value ?? 0;
+      variants.push({ name: l.size.name || l.size.displayCode, price_jpy: price });
+    }
+
+    // 找到使用者選中的 L2，取精確價格
+    const selectedL2 = (selectedColor && selectedSize)
+      ? (l2s.find((l) => l.color.displayCode === selectedColor && l.size.displayCode === selectedSize) ?? targetL2s[0])
+      : targetL2s[0];
+
+    const priceJpy = selectedL2?.prices?.promo?.value ?? selectedL2?.prices?.base?.value ?? variants[0]?.price_jpy ?? 0;
+
+    // 圖片：優先從 API 拿，否則用 UNIQLO 標準圖片命名規則
+    let imageUrl: string | null = null;
+    const imgList = selectedL2?.color?.image;
+    if (imgList && imgList.length > 0) {
+      const picked = imgList.find((i) => i.type === 'main') ?? imgList[0];
+      if (picked?.url) {
+        imageUrl = picked.url.startsWith('//') ? `https:${picked.url}` : picked.url;
+      }
+    }
+    if (!imageUrl && numericCode) {
+      const colorSuffix = selectedColor || (firstColorCode ?? '00');
+      imageUrl = `https://image.uniqlo.com/UQ/ST3/jp/imagesgoods/${numericCode}/item/jpgoods_${colorSuffix}_${numericCode}.jpg`;
+    }
+
+    return {
+      productName: productName || `UNIQLO 商品 ${numericCode}`,
+      priceJpy,
+      brand: 'UNIQLO',
+      description,
+      imageUrl,
+      variants,
+      productCode: numericCode,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 從 URL 抽取商品資訊。
  * 新邏輯：先用 cheerio 抽取 → 抽到足夠資訊就直接用（跳過 AI） → 否則帶 hints 交給 AI
@@ -351,6 +493,15 @@ async function fetchUrlContent(url: string): Promise<{
   // SSRF 防護
   if (!isAllowedUrl(url)) {
     return { prompt: buildUrlFallback(url, urlHints) };
+  }
+
+  // UNIQLO 是 SPA，HTML scraping 無法拿到真實資料，改走官方 API
+  if (new URL(url).hostname.includes('uniqlo.com')) {
+    const uniqloData = await fetchUniqloProduct(url);
+    if (uniqloData && uniqloData.productName && uniqloData.priceJpy > 0) {
+      return { prompt: '', directResult: uniqloData };
+    }
+    // API 失敗時 fallback 到一般流程（可能拿到部分資料）
   }
 
   try {
