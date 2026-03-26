@@ -26,6 +26,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPin, setShowPin] = useState(false);
+  const [confirmPin, setConfirmPin] = useState(""); // PIN 確認（僅新設定時）
+  const [pinStep, setPinStep] = useState<"first" | "confirm">("first");
 
   // 步驟 1：送出名字，查詢是否已存在
   async function handleNameSubmit(e: React.FormEvent) {
@@ -91,28 +93,55 @@ export default function HomePage() {
     }
   }
 
-  // PIN 輸入改變時，若已達 4 位則自動送出
+  const isSettingNewPin = pinMode === "set" || pinMode === "set_existing";
+
+  // PIN 輸入改變時，若已達 4 位則自動送出或進入確認步驟
   function handlePinChange(value: string) {
     const cleaned = value.replace(/\D/g, "").slice(0, 4);
-    setPin(cleaned);
-    setError("");
-    if (cleaned.length === 4) {
-      handlePinSubmit(cleaned);
+
+    if (isSettingNewPin && pinStep === "confirm") {
+      setConfirmPin(cleaned);
+      setError("");
+      if (cleaned.length === 4) {
+        if (cleaned !== pin) {
+          setError("兩次 PIN 碼不一致，請重新輸入");
+          setPin("");
+          setConfirmPin("");
+          setPinStep("first");
+        } else {
+          handlePinSubmit(cleaned);
+        }
+      }
+    } else {
+      setPin(cleaned);
+      setError("");
+      if (cleaned.length === 4) {
+        if (isSettingNewPin) {
+          setPinStep("confirm");
+          setConfirmPin("");
+        } else {
+          handlePinSubmit(cleaned);
+        }
+      }
     }
   }
 
   const pinLabels: Record<PinMode, { title: string; desc: string }> = {
     set: {
-      title: "設定你的 PIN 碼",
-      desc: "首次使用，請設定 4 位數字 PIN，下次在其他裝置登入時需要輸入",
+      title: pinStep === "confirm" ? "再輸入一次確認" : "設定你的 PIN 碼",
+      desc: pinStep === "confirm"
+        ? "請再次輸入剛才設定的 4 位數字 PIN 碼"
+        : "首次使用，請設定 4 位數字 PIN，下次在其他裝置登入時需要輸入",
     },
     enter: {
       title: `歡迎回來，${name}！`,
       desc: "請輸入你的 4 位數字 PIN 碼",
     },
     set_existing: {
-      title: "保護你的帳號",
-      desc: `「${name}」這個名字已有人使用。如果這是你，請設定 PIN 碼來綁定帳號；若不是，請返回換個名字。`,
+      title: pinStep === "confirm" ? "再輸入一次確認" : "保護你的帳號",
+      desc: pinStep === "confirm"
+        ? "請再次輸入剛才設定的 4 位數字 PIN 碼"
+        : `「${name}」這個名字已有人使用。如果這是你，請設定 PIN 碼來綁定帳號；若不是，請返回換個名字。`,
     },
   };
 
@@ -239,7 +268,7 @@ export default function HomePage() {
                     inputMode="numeric"
                     pattern="\d{4}"
                     maxLength={4}
-                    value={pin}
+                    value={isSettingNewPin && pinStep === "confirm" ? confirmPin : pin}
                     onChange={(e) => handlePinChange(e.target.value)}
                     placeholder="• • • •"
                     className="w-full rounded-xl border border-gray-200 px-4 py-3 pr-12 text-center text-2xl tracking-[0.5em] shadow-sm focus:border-sakura-400 focus:outline-none focus:ring-2 focus:ring-sakura-200"
@@ -273,10 +302,16 @@ export default function HomePage() {
 
               <button
                 type="button"
-                onClick={() => { setStep("name"); setPin(""); setError(""); setShowPin(false); }}
+                onClick={() => {
+                  if (isSettingNewPin && pinStep === "confirm") {
+                    setPinStep("first"); setPin(""); setConfirmPin(""); setError("");
+                  } else {
+                    setStep("name"); setPin(""); setConfirmPin(""); setPinStep("first"); setError(""); setShowPin(false);
+                  }
+                }}
                 className="w-full text-center text-sm text-gray-400 hover:text-gray-600"
               >
-                ← 重新輸入名字
+                {isSettingNewPin && pinStep === "confirm" ? "← 重新設定 PIN" : "← 重新輸入名字"}
               </button>
             </div>
           )}

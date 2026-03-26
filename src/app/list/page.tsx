@@ -85,9 +85,14 @@ export default function ListPage() {
     init();
   }, [router]);
 
-  // 載入匯率
+  // 載入匯率（失敗時用預設值）
   useEffect(() => {
-    fetch("/api/exchange-rate").then((r) => r.json()).then(setExchangeRate).catch(() => {});
+    fetch("/api/exchange-rate")
+      .then((r) => r.json())
+      .then(setExchangeRate)
+      .catch(() => {
+        setExchangeRate({ rate: 0.22, updated_at: new Date().toISOString() });
+      });
   }, []);
 
   // 搜尋 + 排序後的清單
@@ -249,7 +254,8 @@ export default function ListPage() {
     );
   }
 
-  const totalTwd = items.reduce((sum, i) => sum + (i.ai_price_twd || 0) * (i.quantity || 1), 0);
+  const activeItems = items.filter((i) => i.status === "pending" || i.status === "bought");
+  const totalTwd = activeItems.reduce((sum, i) => sum + (i.ai_price_twd || 0) * (i.quantity || 1), 0);
 
   return (
     <div className={`page-safe-bottom mx-auto min-h-dvh max-w-lg md:max-w-3xl ${!isOnline ? "pt-10" : ""}`}>
@@ -259,8 +265,8 @@ export default function ListPage() {
       {/* Header */}
       <header className="header-safe sticky top-0 z-10 border-b border-gray-100 bg-white/80 px-4 backdrop-blur-md">
         <div className="flex items-center justify-between">
-          <button onClick={() => router.push("/")} className="group min-w-0 text-left" aria-label="回首頁">
-            <h1 className="text-lg font-bold text-gray-900 transition-colors group-hover:text-sakura-500">
+          <div className="min-w-0 text-left">
+            <h1 className="text-lg font-bold text-gray-900">
               🌸 {user?.name} 的清單
             </h1>
             {exchangeRate && (
@@ -269,7 +275,7 @@ export default function ListPage() {
                 更新 {new Date(exchangeRate.updated_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}
               </p>
             )}
-          </button>
+          </div>
           <button onClick={handleLogout}
             className="shrink-0 rounded-lg px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
             切換身份

@@ -213,7 +213,7 @@ export default function AdminPage() {
     total: items.length,
     pending: items.filter((i) => i.status === "pending").length,
     bought: items.filter((i) => i.status === "bought").length,
-    totalTwd: items.reduce((sum, i) => sum + (i.ai_price_twd || 0) * (i.quantity || 1), 0),
+    totalTwd: items.filter((i) => i.status === "pending" || i.status === "bought").reduce((sum, i) => sum + (i.ai_price_twd || 0) * (i.quantity || 1), 0),
     totalWeightG: items.reduce((sum, i) => sum + (i.weight_g || 0) * (i.quantity || 1), 0),
   };
 
