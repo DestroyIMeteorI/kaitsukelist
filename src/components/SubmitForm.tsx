@@ -14,8 +14,16 @@ export default function SubmitForm({ onResult, userId, disabled }: SubmitFormPro
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('');
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const LOADING_MSGS = [
+    '🔍 AI 正在辨識商品...',
+    '💰 查詢日幣價格中...',
+    '🏪 尋找購買地點...',
+    '📦 整理商品資訊...',
+  ];
 
   // 偵測輸入是否為 URL
   const isUrlInput = /^https?:\/\//i.test(text.trim());
@@ -67,7 +75,14 @@ export default function SubmitForm({ onResult, userId, disabled }: SubmitFormPro
     }
 
     setLoading(true);
+    setLoadingMsg(LOADING_MSGS[0]);
     setError("");
+
+    let idx = 0;
+    const timer = setInterval(() => {
+      idx = (idx + 1) % LOADING_MSGS.length;
+      setLoadingMsg(LOADING_MSGS[idx]);
+    }, 1500);
 
     try {
       // 如果有圖片，先上傳到 Supabase Storage
@@ -103,7 +118,9 @@ export default function SubmitForm({ onResult, userId, disabled }: SubmitFormPro
     } catch (err: any) {
       setError(err.message || "發生錯誤，請重試");
     } finally {
+      clearInterval(timer);
       setLoading(false);
+      setLoadingMsg('');
     }
   }
 
@@ -227,6 +244,14 @@ export default function SubmitForm({ onResult, userId, disabled }: SubmitFormPro
           )}
         </button>
       </div>
+
+      {/* Loading 動畫 */}
+      {loadingMsg && (
+        <div className="flex flex-col items-center gap-3 py-6 animate-fadeIn">
+          <div className="text-2xl animate-spin" style={{ animationDuration: '2s' }}>🌸</div>
+          <p className="text-sm text-gray-400 animate-pulse">{loadingMsg}</p>
+        </div>
+      )}
 
       {/* 錯誤訊息 */}
       {error && (

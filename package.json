@@ -13,7 +13,9 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
     "@supabase/supabase-js": "^2.49.0",
+    "@vercel/speed-insights": "^2.0.0",
     "browser-image-compression": "^2.0.2",
+    "cheerio": "^1.2.0",
     "next": "^15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

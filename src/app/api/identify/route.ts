@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import type { AiResponse } from "@/lib/types";
+import * as cheerio from 'cheerio';
 
 // === AI 商品辨識 API ===
 
@@ -13,14 +14,54 @@ function isUrl(text: string): boolean {
 
 // 允許 fetch 的購物網站域名白名單（防止 SSRF）
 const ALLOWED_HOSTS = [
+  // --- 大型電商 ---
   "amazon.co.jp", "www.amazon.co.jp",
   "rakuten.co.jp", "item.rakuten.co.jp", "search.rakuten.co.jp", "www.rakuten.co.jp",
   "shopping.yahoo.co.jp", "store.shopping.yahoo.co.jp", "paypaymall.yahoo.co.jp",
+
+  // --- 家電量販 ---
   "kakaku.com", "www.kakaku.com",
   "yodobashi.com", "www.yodobashi.com",
   "biccamera.com", "www.biccamera.com",
+
+  // --- 藥妝 / 美妝 ---
   "matsukiyo.co.jp", "www.matsukiyo.co.jp",
+  "cosme.net", "www.cosme.net", "www.cosme.com",
+  "sundrug.co.jp", "www.sundrug.co.jp",
+  "ainz-tulpe.jp", "www.ainz-tulpe.jp",
+
+  // --- 服飾 ---
+  "uniqlo.com", "www.uniqlo.com",
+  "gu-global.com", "www.gu-global.com",
+  "zozo.jp", "www.zozotown.com",
+  "abc-mart.net", "www.abc-mart.net",
+
+  // --- 生活雜貨 ---
+  "muji.com", "www.muji.com",
+  "loft.co.jp", "www.loft.co.jp",
+  "hands.net", "www.hands.net",
+  "nitori-net.jp", "www.nitori-net.jp",
+
+  // --- 折扣 / 二手 ---
   "donki.com", "www.donki.com",
+  "mercari.com", "jp.mercari.com",
+  "fril.jp", "www.fril.jp",
+
+  // --- 食品 / 土產 ---
+  "royce.com", "www.royce.com",
+  "ishiya-shop.jp", "www.ishiya-shop.jp",
+  "calbee.co.jp", "www.calbee.co.jp",
+
+  // --- 便利商店 / 超市 ---
+  "sej.co.jp", "www.sej.co.jp",
+  "lawson.co.jp", "www.lawson.co.jp",
+  "family.co.jp", "www.family.co.jp",
+  "aeon.com", "www.aeon.com",
+
+  // --- 動漫 / 周邊 ---
+  "animate.co.jp", "www.animate.co.jp",
+  "suruga-ya.jp", "www.suruga-ya.jp",
+  "mandarake.co.jp", "www.mandarake.co.jp",
 ];
 
 function isAllowedUrl(url: string): boolean {
@@ -32,6 +73,109 @@ function isAllowedUrl(url: string): boolean {
   }
 }
 
+// === 從 HTML 抽取結構化資料的工具 ===
+
+/** 從文字裡抽出價格數字，例如 "¥1,980（税込）" → 1980 */
+function extractPrice(text: string | undefined | null): number {
+  if (!text) return 0;
+  const cleaned = text.replace(/[^0-9]/g, '');
+  const num = parseInt(cleaned, 10);
+  return isNaN(num) ? 0 : num;
+}
+
+/**
+ * 從 HTML 裡找 JSON-LD 結構化資料。
+ * 很多購物網站會在 <script type="application/ld+json"> 裡放商品資料，
+ * 這是最準確的資料來源。
+ */
+function extractJsonLd($: cheerio.CheerioAPI, targetType: string): any {
+  const scripts = $('script[type="application/ld+json"]');
+  for (let i = 0; i < scripts.length; i++) {
+    try {
+      const data = JSON.parse($(scripts[i]).html() || '');
+      const items = Array.isArray(data) ? data : [data];
+      for (const item of items) {
+        if (item['@type'] === targetType) return item;
+        // 有時候包在 @graph 裡面
+        if (item['@graph']) {
+          const found = item['@graph'].find((g: any) => g['@type'] === targetType);
+          if (found) return found;
+        }
+      }
+    } catch { /* JSON 解析失敗就跳過 */ }
+  }
+  return null;
+}
+
+/**
+ * 用 cheerio 從 HTML 抽取商品資訊。
+ * 依序嘗試：JSON-LD → OG meta + price selector。
+ * 回傳 null 代表資訊不夠，需要繼續用 AI 辨識。
+ */
+function extractProductFromHtml(html: string, _hostname: string): {
+  productName: string;
+  priceJpy: number;
+  brand: string;
+  description: string;
+} | null {
+  const $ = cheerio.load(html);
+
+  // 第一優先：JSON-LD（最準確）
+  const jsonLd = extractJsonLd($, 'Product');
+  if (jsonLd && jsonLd.name) {
+    const price = jsonLd.offers?.price
+      ? Number(jsonLd.offers.price)
+      : jsonLd.offers?.lowPrice
+        ? Number(jsonLd.offers.lowPrice)
+        : 0;
+    return {
+      productName: String(jsonLd.name),
+      priceJpy: Math.round(price),
+      brand: jsonLd.brand?.name || jsonLd.brand || '',
+      description: String(jsonLd.description || '').slice(0, 200),
+    };
+  }
+
+  // 第二優先：OG meta + 常見 price CSS selector
+  const ogTitle = $('meta[property="og:title"]').attr('content')?.trim();
+  const ogDesc = $('meta[property="og:description"]').attr('content')?.trim()
+    || $('meta[name="description"]').attr('content')?.trim();
+  const priceFromMeta = extractPrice(
+    $('meta[property="product:price:amount"]').attr('content')
+    || $('meta[property="og:price:amount"]').attr('content')
+  );
+
+  // 各網站的價格 CSS selector
+  const priceSelectors = [
+    '.a-price-whole',                       // Amazon
+    '.price2', '.price--OX_YW',             // 樂天
+    '.elPriceNumber', '.Price__value',       // Yahoo Shopping
+    '.productPrice', '.js_currentPrice',     // Yodobashi
+    '.bcs_price',                            // BIC CAMERA
+    '.price', '.product-price',              // 通用
+  ];
+  let priceFromSelector = 0;
+  for (const sel of priceSelectors) {
+    const text = $(sel).first().text();
+    const p = extractPrice(text);
+    if (p > 0) { priceFromSelector = p; break; }
+  }
+
+  const finalPrice = priceFromMeta || priceFromSelector;
+  const title = ogTitle || $('title').text().trim();
+
+  if (title && title.length > 3) {
+    return {
+      productName: title,
+      priceJpy: finalPrice,
+      brand: '',
+      description: (ogDesc || '').slice(0, 200),
+    };
+  }
+
+  return null; // 資訊不夠，交給 AI
+}
+
 // 從 URL 路徑抽取有用的線索（店鋪名、商品 ID、路徑關鍵字）
 function extractUrlHints(url: string): string {
   try {
@@ -39,9 +183,9 @@ function extractUrlHints(url: string): string {
     const host = u.hostname;
     const pathParts = u.pathname.split("/").filter(Boolean);
 
-    // 識別平台
     let platform = "";
     let hints = "";
+
     if (host.includes("rakuten.co.jp")) {
       platform = "樂天市場 (Rakuten)";
       if (pathParts[0]) hints += `店鋪: ${pathParts[0]}\n`;
@@ -52,12 +196,45 @@ function extractUrlHints(url: string): string {
       if (dpIndex >= 0 && pathParts[dpIndex + 1]) {
         hints += `ASIN: ${pathParts[dpIndex + 1]}\n`;
       }
-      // Amazon URL 通常第一段是商品名（URL-encoded 日文）
       if (pathParts[0] && pathParts[0] !== "dp" && pathParts[0] !== "gp") {
         hints += `商品名: ${decodeURIComponent(pathParts[0]).replace(/-/g, " ")}\n`;
       }
     } else if (host.includes("yahoo.co.jp")) {
       platform = "Yahoo! ショッピング";
+    } else if (host.includes("uniqlo.com")) {
+      platform = "UNIQLO 日本";
+      const prodCode = pathParts.find(p => /^E\d+/.test(p) || /^\d{6,}/.test(p));
+      if (prodCode) hints += `商品碼: ${prodCode}\n`;
+    } else if (host.includes("gu-global.com")) {
+      platform = "GU 日本";
+      const prodCode = pathParts.find(p => /^\d{6,}/.test(p));
+      if (prodCode) hints += `商品碼: ${prodCode}\n`;
+    } else if (host.includes("muji.com")) {
+      platform = "無印良品 MUJI";
+    } else if (host.includes("cosme.net") || host.includes("cosme.com")) {
+      platform = "@cosme";
+    } else if (host.includes("mercari.com")) {
+      platform = "Mercari メルカリ（二手商品，價格僅供參考）";
+    } else if (host.includes("zozotown.com") || host.includes("zozo.jp")) {
+      platform = "ZOZOTOWN";
+    } else if (host.includes("matsukiyo.co.jp")) {
+      platform = "松本清 Matsumoto Kiyoshi";
+    } else if (host.includes("yodobashi.com")) {
+      platform = "Yodobashi Camera ヨドバシ";
+    } else if (host.includes("biccamera.com")) {
+      platform = "BIC CAMERA";
+    } else if (host.includes("donki.com")) {
+      platform = "唐吉訶德 ドン・キホーテ";
+    } else if (host.includes("animate.co.jp")) {
+      platform = "Animate（動漫周邊）";
+    } else if (host.includes("mandarake.co.jp")) {
+      platform = "Mandarake まんだらけ（動漫二手）";
+    } else if (host.includes("loft.co.jp")) {
+      platform = "LOFT（生活雜貨）";
+    } else if (host.includes("hands.net")) {
+      platform = "東急Hands";
+    } else if (host.includes("nitori-net.jp")) {
+      platform = "NITORI 宜得利";
     } else {
       platform = host;
     }
@@ -68,13 +245,24 @@ function extractUrlHints(url: string): string {
   }
 }
 
-// 從網頁抓取商品資訊（server-side fetch），抓不到則用 URL 線索
-async function fetchUrlContent(url: string): Promise<string> {
+/**
+ * 從 URL 抽取商品資訊。
+ * 新邏輯：先用 cheerio 抽取 → 抽到就直接用（跳過 AI） → 抽不到才交給 AI
+ */
+async function fetchUrlContent(url: string): Promise<{
+  prompt: string;
+  directResult?: {
+    productName: string;
+    priceJpy: number;
+    brand: string;
+    description: string;
+  };
+}> {
   const urlHints = extractUrlHints(url);
 
-  // SSRF 防護：只允許白名單域名
+  // SSRF 防護
   if (!isAllowedUrl(url)) {
-    return buildUrlFallback(url, urlHints);
+    return { prompt: buildUrlFallback(url, urlHints) };
   }
 
   try {
@@ -88,51 +276,45 @@ async function fetchUrlContent(url: string): Promise<string> {
     });
 
     if (!res.ok) {
-      return buildUrlFallback(url, urlHints);
+      return { prompt: buildUrlFallback(url, urlHints) };
     }
 
     const html = await res.text();
+    const hostname = new URL(url).hostname;
 
-    // 抽取 OG / meta 資訊
-    const title =
-      html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || "";
-    const ogTitle =
-      html.match(
-        /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i
-      )?.[1] || "";
-    const ogDesc =
-      html.match(
-        /<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']/i
-      )?.[1] || "";
-    const metaDesc =
-      html.match(
-        /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i
-      )?.[1] || "";
-
-    // 抽取頁面文字
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const bodyText = bodyMatch
-      ? bodyMatch[1]
-          .replace(/<script[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[\s\S]*?<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 3000)
-      : "";
-
-    // 如果內容太少（被 bot 擋住），使用 URL 線索 fallback
-    const usefulContent = (ogTitle || title || "").length + bodyText.length;
-    if (usefulContent < 100) {
-      return buildUrlFallback(url, urlHints);
+    // ✨ 嘗試直接從 HTML 抽取
+    const directResult = extractProductFromHtml(html, hostname);
+    if (directResult && directResult.productName && directResult.priceJpy > 0) {
+      return { prompt: '', directResult };
     }
 
-    return `以下是商品網頁的內容，請從中辨識商品資訊：
-網頁標題: ${ogTitle || title}
-網頁描述: ${ogDesc || metaDesc}
-頁面內容: ${bodyText}`;
+    // 資料不夠 → 用 cheerio 取摘要給 AI
+    const $ = cheerio.load(html);
+    const ogTitle = $('meta[property="og:title"]').attr('content')?.trim()
+      || $('title').text().trim();
+    const ogDesc = $('meta[property="og:description"]').attr('content')?.trim()
+      || $('meta[name="description"]').attr('content')?.trim();
+
+    $('script, style, nav, footer, header').remove();
+    const bodyText = $('body').text().replace(/\s+/g, ' ').trim().slice(0, 2000);
+
+    if ((ogTitle || '').length + bodyText.length < 50) {
+      return { prompt: buildUrlFallback(url, urlHints) };
+    }
+
+    // 如果有部分資訊，一起告訴 AI
+    const partialHints = directResult
+      ? `\n已從網頁抽取到：商品名「${directResult.productName}」${directResult.brand ? `、品牌「${directResult.brand}」` : ''}，請補充完整。`
+      : '';
+
+    return {
+      prompt: `以下是商品網頁的內容，請從中辨識商品資訊：
+網頁標題: ${ogTitle}
+網頁描述: ${ogDesc || ''}
+頁面內容: ${bodyText}${partialHints}`
+    };
   } catch {
-    return buildUrlFallback(url, urlHints);
+    return { prompt: buildUrlFallback(url, urlHints) };
   }
 }
 
@@ -156,16 +338,40 @@ function buildPrompt(
 
 目前日幣兌台幣匯率：1 JPY ≈ ${exchangeRate} TWD
 
-回覆格式由 schema 控制，你只需填入正確的值。
+## 重要規則
+1. product_name_zh 格式：「品牌 + 商品名 + 規格」，例如「石屋製菓 白色戀人 36入」
+2. product_name_ja：填日文原名，方便在日本搜尋
+3. estimated_price_jpy：填 selected_variant_index 對應品項的日幣價格
+4. estimated_price_twd：estimated_price_jpy × ${exchangeRate}，四捨五入到整數
+5. where_to_buy：填日本實體店鋪或購物網站（如「松本清」「唐吉訶德」「Amazon.co.jp」）
+6. confidence：確定 → high、有點不確定 → medium、很不確定 → low
+7. variants：列出所有常見品項/規格/容量/口味，每個附名稱和日幣價格。至少 1 個。
+8. 如果價格不確定，寧可填 0，不要亂猜
 
-規則：
-- product_name_zh / description：使用繁體中文（台灣用語）
-- estimated_price_jpy：填 selected_variant_index 對應品項的日幣價格
-- estimated_price_twd：estimated_price_jpy × ${exchangeRate} 四捨五入到整數
-- where_to_buy：日本實體店鋪（如「松本清」「唐吉訶德」「BicCamera」）
-- confidence：確定 high、有點不確定 medium、很不確定 low
-- variants：列出該商品所有常見的品項/規格/容量/數量/口味，每個品項附上名稱和日幣價格。至少列出 1 個品項，如果確實只有一種規格就填 1 個。
-- selected_variant_index：預設選中最符合使用者描述的品項索引（從 0 開始）`;
+## 範例
+
+輸入：「白色戀人」
+正確回覆重點：
+- product_name_zh: "石屋製菓 白色戀人 36入"
+- product_name_ja: "石屋製菓 白い恋人 36枚入"
+- brand: "石屋製菓 ISHIYA"
+- variants 要有 12入/24入/36入/54入 四種規格
+- confidence: "high"
+
+輸入：「uniqlo 發熱衣」
+正確回覆重點：
+- product_name_zh: "UNIQLO HEATTECH 圓領長袖T恤"
+- product_name_ja: "ユニクロ ヒートテック クルーネックT（長袖）"
+- variants 要有 一般款/極暖/超極暖 三種
+- where_to_buy 要有 "UNIQLO 日本門市"
+- confidence: "medium"（因為價格常變動）
+
+輸入：「dhc 護唇膏」
+正確回覆重點：
+- product_name_zh: "DHC 純橄欖護唇膏 1.5g"
+- product_name_ja: "DHC 薬用リップクリーム 1.5g"
+- where_to_buy: ["松本清", "唐吉訶德", "日本便利商店"]
+- confidence: "high"`;
 
   if (urlContent) {
     return `${base}\n\n${urlContent}`;
@@ -175,21 +381,8 @@ function buildPrompt(
     return `${base}\n\n使用者想買的商品：「${inputText}」`;
   }
 
-  return `${base}\n\n使用者上傳了一張商品圖片，請辨識圖片中的商品（注意名稱文字、品牌 Logo、包裝特徵）。如果圖片模糊或無法辨識，confidence 填 low。`;
-}
-
-// 僅在失敗重試時使用的精簡 prompt
-function buildRetryPrompt(
-  inputText: string | null,
-  exchangeRate: number,
-  urlContent?: string
-) {
-  const context = urlContent
-    ? urlContent.slice(0, 500)
-    : inputText
-      ? `商品：${inputText}`
-      : "請辨識圖片中的商品。";
-  return `辨識以下日本商品，匯率 1 JPY = ${exchangeRate} TWD。列出所有品項規格到 variants 陣列。${context}`;
+  return `${base}\n\n使用者上傳了一張商品圖片，請辨識圖片中的商品（注意名稱文字、品牌 Logo、包裝特徵）。
+如果圖片模糊或無法辨識，confidence 填 low，product_name_zh 填你最好的猜測。`;
 }
 
 // 從 AI 回覆的原始物件中提取並補足必要欄位
@@ -352,9 +545,45 @@ export async function POST(req: NextRequest) {
     // 偵測 URL 輸入 → server-side fetch 網頁內容
     let urlContent: string | undefined;
     let userUrl: string | undefined;
+
     if (inputText && isUrl(inputText)) {
       userUrl = inputText.trim();
-      urlContent = await fetchUrlContent(userUrl);
+      const urlData = await fetchUrlContent(userUrl);
+      urlContent = urlData.prompt || undefined;
+
+      // ✨ 如果從 HTML 直接抽到完整資訊 → 跳過 AI，秒回！
+      if (urlData.directResult && urlData.directResult.priceJpy > 0) {
+        // 先取匯率
+        let exchangeRate = 0.2012;
+        try {
+          const rateRes = await fetch(
+            `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/api/exchange-rate`
+          );
+          const rateData = await rateRes.json();
+          exchangeRate = rateData.rate;
+        } catch { /* 用預設 */ }
+
+        const dr = urlData.directResult;
+        const aiData: AiResponse = {
+          product_name_zh: dr.productName,
+          product_name_ja: dr.productName,
+          brand: dr.brand,
+          estimated_price_jpy: dr.priceJpy,
+          estimated_price_twd: Math.round(dr.priceJpy * exchangeRate),
+          where_to_buy: [new URL(userUrl).hostname],
+          buy_url: userUrl,
+          description: dr.description || '',
+          confidence: 'high',
+          variants: [{ name: dr.productName, price_jpy: dr.priceJpy }],
+          selected_variant_index: 0,
+        };
+
+        return NextResponse.json({
+          success: true,
+          data: aiData,
+          exchange_rate: exchangeRate,
+        });
+      }
     }
 
     // 取得匯率
@@ -373,10 +602,14 @@ export async function POST(req: NextRequest) {
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.2,  // 從 0.3 降到 0.2，讓回答更穩定
         maxOutputTokens: 2048,
         responseMimeType: "application/json",
         responseSchema: responseSchema as any,
+        // @ts-expect-error — thinkingConfig 在新版 SDK 才有型別
+        thinkingConfig: {
+          thinkingBudget: 0,  // 關閉思考，直接回答
+        },
       },
     });
 
@@ -395,43 +628,47 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // 呼叫 Gemini，最多嘗試 2 次
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const prompt =
-        attempt === 1
-          ? buildPrompt(urlContent ? null : inputText, exchangeRate, urlContent)
-          : buildRetryPrompt(
-              urlContent ? null : inputText,
-              exchangeRate,
-              urlContent
-            );
+    // === 呼叫 Gemini（只呼叫一次，不 retry） ===
+    const prompt = buildPrompt(
+      urlContent ? null : inputText,
+      exchangeRate,
+      urlContent
+    );
+    const contents = imagePart ? [prompt, imagePart] : [prompt];
 
-      const contents = imagePart ? [prompt, imagePart] : [prompt];
-      const result = await model.generateContent(contents);
-      const responseText = result.response.text();
+    const result = await model.generateContent(contents);
+    const responseText = result.response.text();
+    const raw = tryParseJson(responseText);
 
-      const raw = tryParseJson(responseText);
-
-      if (raw) {
-        const aiData = normalizeAiResponse(raw, exchangeRate, userUrl);
-        return NextResponse.json({
-          success: true,
-          data: aiData,
-          exchange_rate: exchangeRate,
-        });
-      }
-
-      if (attempt === 1) {
-        console.warn(
-          "AI 第一次回覆解析失敗，正在重試。原始回覆：",
-          responseText.slice(0, 200)
-        );
-      }
+    if (raw) {
+      const aiData = normalizeAiResponse(raw, exchangeRate, userUrl);
+      return NextResponse.json({
+        success: true,
+        data: aiData,
+        exchange_rate: exchangeRate,
+      });
     }
 
+    // JSON 解析失敗 → 回傳預設值讓使用者手動修改（不再重試）
+    console.warn("AI 回覆解析失敗，使用 fallback。原始回覆：", responseText.slice(0, 200));
+    const fallbackData: AiResponse = {
+      product_name_zh: inputText || "（AI 辨識失敗，請手動輸入）",
+      product_name_ja: "",
+      brand: "",
+      estimated_price_jpy: 0,
+      estimated_price_twd: 0,
+      where_to_buy: ["Amazon.co.jp"],
+      buy_url: userUrl || "",
+      description: "AI 辨識異常，請手動修改商品資訊",
+      confidence: "low",
+      variants: [],
+      selected_variant_index: 0,
+    };
     return NextResponse.json({
-      success: false,
-      error: "AI 回覆格式異常，請重試",
+      success: true,
+      data: fallbackData,
+      exchange_rate: exchangeRate,
+      needs_manual_edit: true,
     });
   } catch (error: unknown) {
     console.error("AI 辨識錯誤:", error);
