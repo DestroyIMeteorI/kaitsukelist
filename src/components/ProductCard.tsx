@@ -17,6 +17,7 @@ interface ProductCardProps {
   onDelete?: (id: string) => void;
   onStatusChange?: (id: string, status: Item["status"], purchaseDetails?: PurchaseDetails) => void;
   onEdit?: (id: string, fields: EditableItemFields) => void;
+  onAiFill?: (id: string) => Promise<void>;
 }
 
 function ProductCard({
@@ -26,12 +27,14 @@ function ProductCard({
   onDelete,
   onStatusChange,
   onEdit,
+  onAiFill,
 }: ProductCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showBoughtForm, setShowBoughtForm] = useState(false);
   const [actualPriceJpy, setActualPriceJpy] = useState(String(item.ai_price_jpy || ""));
   const [actualQuantity, setActualQuantity] = useState(String(item.quantity || 1));
+  const [aiFilling, setAiFilling] = useState(false);
   const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -135,6 +138,18 @@ function ProductCard({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {onAiFill && !isEditing && (
+            <button
+              onClick={async () => {
+                setAiFilling(true);
+                try { await onAiFill(item.id); } finally { setAiFilling(false); }
+              }}
+              disabled={aiFilling}
+              className="rounded-lg px-2 py-1 text-xs text-sakura-400 transition-colors hover:bg-sakura-50 hover:text-sakura-600 disabled:opacity-50"
+            >
+              {aiFilling ? "⏳ 分析中..." : "✨ AI 補齊"}
+            </button>
+          )}
           {onEdit && !isEditing && (
             <button
               onClick={handleEditOpen}

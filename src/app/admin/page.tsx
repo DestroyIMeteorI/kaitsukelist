@@ -168,6 +168,54 @@ export default function AdminPage() {
     } catch { showToast("更新失敗，請重試", "error"); }
   }
 
+  async function handleAiFill(itemId: string) {
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const hasContext = item.ai_product_name || item.ai_product_name_ja || item.ai_brand || item.note || item.ai_product_url;
+    if (!hasContext) { showToast("商品資訊不足，無法 AI 補齊", "error"); return; }
+
+    try {
+      const res = await fetch("/api/autofill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_name: item.ai_product_name || item.input_text || undefined,
+          product_name_ja: item.ai_product_name_ja || undefined,
+          brand: item.ai_brand || undefined,
+          price_jpy: item.ai_price_jpy || undefined,
+          where_to_buy: item.ai_where_to_buy?.length ? item.ai_where_to_buy : undefined,
+          weight_g: item.weight_g || undefined,
+          description: item.ai_description || undefined,
+          note: item.note || undefined,
+          product_url: item.ai_product_url || undefined,
+        }),
+      });
+      const result = await res.json();
+      if (!result.success) { showToast(result.error || "AI 補齊失敗，請重試", "error"); return; }
+
+      const ai = result.data;
+      const rate = result.exchange_rate;
+      const fields: EditableItemFields = {};
+      if (!item.ai_product_name && ai.product_name_zh) fields.ai_product_name = ai.product_name_zh;
+      if (!item.ai_product_name_ja && ai.product_name_ja) fields.ai_product_name_ja = ai.product_name_ja;
+      if (!item.ai_brand && ai.brand) fields.ai_brand = ai.brand;
+      if (!item.ai_price_jpy && ai.estimated_price_jpy) {
+        fields.ai_price_jpy = ai.estimated_price_jpy;
+        fields.ai_price_twd = Math.round(ai.estimated_price_jpy * rate);
+      }
+      if ((!item.ai_where_to_buy || item.ai_where_to_buy.length === 0) && ai.where_to_buy?.length) {
+        fields.ai_where_to_buy = ai.where_to_buy;
+      }
+      if (!item.weight_g && ai.weight_g) {
+        fields.weight_g = ai.weight_g;
+      }
+      if (Object.keys(fields).length === 0) { showToast("所有欄位已填齊", "info"); return; }
+      await handleItemEdit(itemId, fields);
+      showToast("AI 已補齊空白欄位！", "success");
+    } catch { showToast("AI 補齊失敗，請重試", "error"); }
+  }
+
   async function handleItemEdit(itemId: string, fields: EditableItemFields) {
     try {
       const { updateItem } = await import("@/lib/supabase");
@@ -582,6 +630,7 @@ export default function AdminPage() {
                 onStatusChange={handleStatusChange}
                 onDelete={handleDelete}
                 onEdit={handleItemEdit}
+                onAiFill={handleAiFill}
               />
             ))}
           </div>
