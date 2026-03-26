@@ -207,7 +207,8 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
       setAiInputText(text.trim());
       setAiImageUrl(imageUrl);
       setSelectedVariant(result.data.selected_variant_index ?? 0);
-      setNoteText(result.data.product_code ? `品番: ${result.data.product_code}` : "");
+      // 優先用 description（UNIQLO 等會帶 カラー/サイズ/商品番号），否則 fallback 到品番
+      setNoteText(result.data.description || (result.data.product_code ? `品番: ${result.data.product_code}` : ""));
       setImgError(false);
       setFollowUpAnswers({});
       setStage("confirm");

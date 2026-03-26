@@ -350,13 +350,11 @@ interface UniqloL2 {
 
 /**
  * 從 UNIQLO 官方 API 精準取得商品資訊。
- * UNIQLO JP 是 SPA，一般 HTML scraping 無法拿到真實資料，
- * 但其前端 API 是公開的 REST endpoint，可直接呼叫。
  *
- * 修正紀錄：
- * - 商品名稱改用 /products?productIds= 端點（/products/{id} 只會 302 redirect 到 l2s）
- * - 圖片 URL 改用搜尋結果的 images.main[colorCode].image（正確格式含 _3x4 後綴）
- * - 回傳 selectedVariantIndex 讓前端預選使用者指定的尺寸
+ * 端點說明：
+ * - /products?productIds=   → 商品名、性別分類、各色圖片 URL（正確格式含 _3x4 後綴）
+ * - /price-groups/{group}   → 完整 l2s（含 color.name、size.name、prices）
+ *   注意：/price-groups/{group}/l2s 是另一個端點，回傳的資料是精簡版（無 prices/name）
  */
 async function fetchUniqloProduct(url: string): Promise<{
   productName: string;
@@ -379,7 +377,6 @@ async function fetchUniqloProduct(url: string): Promise<{
     const fullCode = pathParts[productsIdx + 1]; // e.g., "E471809-000"
     const priceGroup = pathParts[productsIdx + 2] || '00';
 
-    // 取純數字商品番号
     const numericCode = fullCode.match(/E?(\d{6,})/)?.[1];
     if (!numericCode) return null;
 
@@ -395,35 +392,36 @@ async function fetchUniqloProduct(url: string): Promise<{
       'Origin': 'https://www.uniqlo.com',
     };
 
-    // 並行呼叫：
-    // - /products?productIds= 取商品名稱 + 每個顏色的圖片 URL（正確格式）
-    // - /l2s 取所有尺寸/顏色的規格與價格
-    const [searchRes, l2sRes] = await Promise.all([
+    // 並行呼叫兩個端點
+    const [searchRes, priceGroupRes] = await Promise.all([
       fetch(`${apiBase}/products?productIds=${fullCode}`, {
         headers: fetchHeaders,
         signal: AbortSignal.timeout(8000),
       }),
-      fetch(`${apiBase}/products/${fullCode}/price-groups/${priceGroup}/l2s?httpFailure=true`, {
+      // 注意：不加 /l2s，直接呼叫 /price-groups/{group}，才有完整的 prices + name
+      fetch(`${apiBase}/products/${fullCode}/price-groups/${priceGroup}`, {
         headers: fetchHeaders,
         signal: AbortSignal.timeout(8000),
       }),
     ]);
 
-    if (!l2sRes.ok) return null;
+    if (!priceGroupRes.ok) return null;
 
-    const l2sJson = await l2sRes.json();
-    const l2s: UniqloL2[] = l2sJson?.result?.l2s || [];
+    const priceGroupJson = await priceGroupRes.json();
+    const l2s: UniqloL2[] = priceGroupJson?.result?.l2s || [];
     if (l2s.length === 0) return null;
 
-    // 從 search 端點取商品名稱與每色圖片
+    // 從 search 端點取商品名、性別分類、各色圖片
     let productName = '';
+    let genderName = '';
     let imageUrl: string | null = null;
     if (searchRes.ok) {
       const searchJson = await searchRes.json();
       const item = searchJson?.result?.items?.[0];
       productName = String(item?.name || '');
-      // images.main 是以 colorDisplayCode 為 key 的物件，e.g. { "09": { image: "https://..." } }
-      const mainImages = item?.images?.main || {};
+      genderName = String(item?.genderName || '');
+      // images.main 是以 colorDisplayCode 為 key 的物件：{ "09": { image: "https://..." } }
+      const mainImages: Record<string, { image: string }> = item?.images?.main || {};
       const colorKey = selectedColor || Object.keys(mainImages)[0];
       if (colorKey && mainImages[colorKey]?.image) {
         imageUrl = String(mainImages[colorKey].image);
@@ -448,20 +446,33 @@ async function fetchUniqloProduct(url: string): Promise<{
       variants.push({ name: l.size.name || l.size.displayCode, price_jpy: price });
     }
 
-    // 找到使用者選中的 L2，取精確價格
+    // 找到使用者選中的 L2，取精確價格 + 顏色名 + 尺寸名
     const selectedL2 = (selectedColor && selectedSize)
       ? (l2s.find((l) => l.color.displayCode === selectedColor && l.size.displayCode === selectedSize) ?? targetL2s[0])
       : targetL2s[0];
 
     const priceJpy = selectedL2?.prices?.promo?.value ?? selectedL2?.prices?.base?.value ?? variants[0]?.price_jpy ?? 0;
 
+    // 組合規格描述（カラー / サイズ / 商品番号）給使用者確認
+    const colorCode = selectedL2?.color?.displayCode || selectedColor || '';
+    const colorName = selectedL2?.color?.name || '';
+    const colorLabel = [colorCode, colorName].filter(Boolean).join(' ');
+
+    const sizeName = selectedL2?.size?.name || selectedL2?.size?.displayCode || '';
+    const sizeLabel = genderName ? `${genderName} ${sizeName}`.trim() : sizeName;
+
+    const descParts: string[] = [];
+    if (colorLabel) descParts.push(`カラー: ${colorLabel}`);
+    if (sizeLabel) descParts.push(`サイズ: ${sizeLabel}`);
+    if (numericCode) descParts.push(`商品番号: ${numericCode}`);
+    const description = descParts.join('｜');
+
     // 計算預選的 variant index（對應使用者 URL 指定的尺寸）
-    const selectedSizeName = selectedL2?.size?.name || selectedL2?.size?.displayCode;
-    const selectedVariantIndex = selectedSizeName
-      ? Math.max(0, variants.findIndex((v) => v.name === selectedSizeName))
+    const selectedVariantIndex = sizeName
+      ? Math.max(0, variants.findIndex((v) => v.name === sizeName))
       : 0;
 
-    // 圖片 fallback：若 search API 沒拿到，用標準命名規則（含正確的 _3x4 後綴）
+    // 圖片 fallback（search API 拿不到時用標準 URL 格式）
     if (!imageUrl && numericCode) {
       const colorSuffix = selectedColor || (firstColorCode ?? '00');
       imageUrl = `https://image.uniqlo.com/UQ/ST3/jp/imagesgoods/${numericCode}/item/jpgoods_${colorSuffix}_${numericCode}_3x4.jpg`;
@@ -471,7 +482,7 @@ async function fetchUniqloProduct(url: string): Promise<{
       productName: productName || `UNIQLO 商品 ${numericCode}`,
       priceJpy,
       brand: 'UNIQLO',
-      description: '',
+      description,
       imageUrl,
       variants,
       productCode: numericCode,
