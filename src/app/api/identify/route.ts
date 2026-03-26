@@ -3,12 +3,73 @@ import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import type { AiResponse } from "@/lib/types";
 
 // === AI 商品辨識 API ===
-// 白話：使用者傳文字或圖片過來，這裡會叫 Gemini AI 去辨識是什麼商品
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+// 偵測輸入是否為 URL
+function isUrl(text: string): boolean {
+  return /^https?:\/\//i.test(text.trim());
+}
+
+// 從網頁抓取商品資訊（server-side fetch）
+async function fetchUrlContent(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept-Language": "ja,zh-TW;q=0.9,en;q=0.8",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return `無法存取此網頁（HTTP ${res.status}）`;
+
+    const html = await res.text();
+
+    // 抽取 OG / meta 資訊
+    const title =
+      html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || "";
+    const ogTitle =
+      html.match(
+        /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i
+      )?.[1] || "";
+    const ogDesc =
+      html.match(
+        /<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']/i
+      )?.[1] || "";
+    const metaDesc =
+      html.match(
+        /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i
+      )?.[1] || "";
+
+    // 抽取頁面文字（去 HTML tag，取前 3000 字）
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const bodyText = bodyMatch
+      ? bodyMatch[1]
+          .replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 3000)
+      : "";
+
+    return `以下是商品網頁的內容，請從中辨識商品資訊：
+網頁標題: ${ogTitle || title}
+網頁描述: ${ogDesc || metaDesc}
+頁面內容: ${bodyText}`;
+  } catch {
+    return "無法存取此網頁，請根據網址中的關鍵字推測商品。";
+  }
+}
+
 // 建立辨識用的 prompt
-function buildPrompt(inputText: string | null, exchangeRate: number) {
+function buildPrompt(
+  inputText: string | null,
+  exchangeRate: number,
+  urlContent?: string
+) {
   const base = `你是一個專業的日本代購助手。你的任務是辨識商品並提供完整的購買資訊。
 
 目前日幣兌台幣匯率：1 JPY ≈ ${exchangeRate} TWD
@@ -17,11 +78,16 @@ function buildPrompt(inputText: string | null, exchangeRate: number) {
 
 規則：
 - product_name_zh / description：使用繁體中文（台灣用語）
-- estimated_price_jpy：日本當地零售價（整數，不含稅）
+- estimated_price_jpy：填 selected_variant_index 對應品項的日幣價格
 - estimated_price_twd：estimated_price_jpy × ${exchangeRate} 四捨五入到整數
 - where_to_buy：日本實體店鋪（如「松本清」「唐吉訶德」「BicCamera」）
-- buy_url：優先 Amazon.co.jp 或日本樂天的商品頁連結
-- confidence：確定 high、有點不確定 medium、很不確定 low`;
+- confidence：確定 high、有點不確定 medium、很不確定 low
+- variants：列出該商品所有常見的品項/規格/容量/數量/口味，每個品項附上名稱和日幣價格。至少列出 1 個品項，如果確實只有一種規格就填 1 個。
+- selected_variant_index：預設選中最符合使用者描述的品項索引（從 0 開始）`;
+
+  if (urlContent) {
+    return `${base}\n\n${urlContent}`;
+  }
 
   if (inputText) {
     return `${base}\n\n使用者想買的商品：「${inputText}」`;
@@ -31,29 +97,66 @@ function buildPrompt(inputText: string | null, exchangeRate: number) {
 }
 
 // 僅在失敗重試時使用的精簡 prompt
-function buildRetryPrompt(inputText: string | null, exchangeRate: number) {
-  return `辨識以下日本商品，匯率 1 JPY = ${exchangeRate} TWD。${inputText ? `商品：${inputText}` : "請辨識圖片中的商品。"}`;
+function buildRetryPrompt(
+  inputText: string | null,
+  exchangeRate: number,
+  urlContent?: string
+) {
+  const context = urlContent
+    ? urlContent.slice(0, 500)
+    : inputText
+      ? `商品：${inputText}`
+      : "請辨識圖片中的商品。";
+  return `辨識以下日本商品，匯率 1 JPY = ${exchangeRate} TWD。列出所有品項規格到 variants 陣列。${context}`;
 }
 
-// 從 AI 回覆的原始物件中提取並補足必要欄位，避免前端因缺欄位崩潰
-function normalizeAiResponse(raw: Record<string, unknown>, exchangeRate: number): AiResponse {
-  const priceJpy = Number(raw.estimated_price_jpy) || 0;
-  const priceTwd = Number(raw.estimated_price_twd) || Math.round(priceJpy * exchangeRate);
+// 從 AI 回覆的原始物件中提取並補足必要欄位
+function normalizeAiResponse(
+  raw: Record<string, unknown>,
+  exchangeRate: number,
+  userUrl?: string
+): AiResponse {
+  const variants = Array.isArray(raw.variants)
+    ? raw.variants.map((v: any) => ({
+        name: String(v.name || ""),
+        price_jpy: Math.round(Number(v.price_jpy) || 0),
+      }))
+    : [];
+
+  const selectedIndex = Math.min(
+    Math.max(0, Number(raw.selected_variant_index) || 0),
+    Math.max(0, variants.length - 1)
+  );
+
+  // 價格優先用選中品項的價格
+  const priceJpy =
+    variants[selectedIndex]?.price_jpy ||
+    Math.round(Number(raw.estimated_price_jpy) || 0);
+  const priceTwd =
+    Math.round(Number(raw.estimated_price_twd) || 0) ||
+    Math.round(priceJpy * exchangeRate);
+
   const rawConfidence = String(raw.confidence || "");
-  const confidence = (["high", "medium", "low"].includes(rawConfidence)
-    ? rawConfidence
-    : "medium") as AiResponse["confidence"];
+  const confidence = (
+    ["high", "medium", "low"].includes(rawConfidence)
+      ? rawConfidence
+      : "medium"
+  ) as AiResponse["confidence"];
 
   return {
-    product_name_zh: String(raw.product_name_zh || raw.name || "未知商品"),
+    product_name_zh: String(raw.product_name_zh || "未知商品"),
     product_name_ja: String(raw.product_name_ja || ""),
     brand: String(raw.brand || ""),
     estimated_price_jpy: priceJpy,
     estimated_price_twd: priceTwd,
-    where_to_buy: Array.isArray(raw.where_to_buy) ? raw.where_to_buy.map(String) : [],
-    buy_url: String(raw.buy_url || ""),
+    where_to_buy: Array.isArray(raw.where_to_buy)
+      ? raw.where_to_buy.map(String)
+      : [],
+    buy_url: userUrl || "",
     description: String(raw.description || ""),
     confidence,
+    variants,
+    selected_variant_index: selectedIndex,
   };
 }
 
@@ -64,14 +167,12 @@ function tryParseJson(text: string): Record<string, unknown> | null {
     .replace(/```\s*/g, "")
     .trim();
 
-  // 先嘗試直接解析
   try {
     return JSON.parse(cleaned);
   } catch {
     // ignore
   }
 
-  // 找第一個 {...} 區塊
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return null;
 
@@ -82,6 +183,77 @@ function tryParseJson(text: string): Record<string, unknown> | null {
   }
 }
 
+// Gemini responseSchema — 強制結構化輸出
+const responseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    product_name_zh: {
+      type: SchemaType.STRING,
+      description: "商品中文名稱（繁體中文）",
+    },
+    product_name_ja: {
+      type: SchemaType.STRING,
+      description: "商品日文名稱",
+    },
+    brand: { type: SchemaType.STRING, description: "品牌名稱" },
+    estimated_price_jpy: {
+      type: SchemaType.INTEGER,
+      description: "selected_variant_index 對應品項的日幣價格",
+    },
+    estimated_price_twd: {
+      type: SchemaType.INTEGER,
+      description: "台幣估算（整數）",
+    },
+    where_to_buy: {
+      type: SchemaType.ARRAY,
+      items: { type: SchemaType.STRING },
+      description: "日本可購買店鋪",
+    },
+    description: {
+      type: SchemaType.STRING,
+      description: "商品描述（30字內，繁體中文）",
+    },
+    confidence: {
+      type: SchemaType.STRING,
+      description: "辨識信心度：high / medium / low",
+    },
+    variants: {
+      type: SchemaType.ARRAY,
+      description: "該商品所有常見品項/規格/容量，至少 1 個",
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          name: {
+            type: SchemaType.STRING,
+            description: "品項名稱（如 18枚入、60mL、抹茶口味）",
+          },
+          price_jpy: {
+            type: SchemaType.INTEGER,
+            description: "該品項日幣價格",
+          },
+        },
+        required: ["name", "price_jpy"],
+      },
+    },
+    selected_variant_index: {
+      type: SchemaType.INTEGER,
+      description: "預設選中的品項索引（從 0 開始，選最符合使用者描述的）",
+    },
+  },
+  required: [
+    "product_name_zh",
+    "product_name_ja",
+    "brand",
+    "estimated_price_jpy",
+    "estimated_price_twd",
+    "where_to_buy",
+    "description",
+    "confidence",
+    "variants",
+    "selected_variant_index",
+  ],
+};
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -90,13 +262,21 @@ export async function POST(req: NextRequest) {
 
     if (!inputText && !imageFile) {
       return NextResponse.json(
-        { error: "請提供文字或圖片" },
+        { error: "請提供文字、圖片或網址" },
         { status: 400 }
       );
     }
 
-    // 先取得匯率
-    let exchangeRate = 0.2012; // 預設值
+    // 偵測 URL 輸入 → server-side fetch 網頁內容
+    let urlContent: string | undefined;
+    let userUrl: string | undefined;
+    if (inputText && isUrl(inputText)) {
+      userUrl = inputText.trim();
+      urlContent = await fetchUrlContent(userUrl);
+    }
+
+    // 取得匯率
+    let exchangeRate = 0.2012;
     try {
       const rateRes = await fetch(
         `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/api/exchange-rate`
@@ -107,45 +287,42 @@ export async function POST(req: NextRequest) {
       // 用預設匯率
     }
 
-    // 選擇 Gemini 模型 + 結構化 JSON schema
+    // Gemini 模型 + 結構化 schema
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
         responseMimeType: "application/json",
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: {
-            product_name_zh: { type: SchemaType.STRING, description: "商品中文名稱（繁體中文）" },
-            product_name_ja: { type: SchemaType.STRING, description: "商品日文名稱" },
-            brand: { type: SchemaType.STRING, description: "品牌名稱" },
-            estimated_price_jpy: { type: SchemaType.INTEGER, description: "日本零售價（日幣整數）" },
-            estimated_price_twd: { type: SchemaType.INTEGER, description: "台幣估算（整數）" },
-            where_to_buy: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "日本可購買店鋪" },
-            buy_url: { type: SchemaType.STRING, description: "購買連結" },
-            description: { type: SchemaType.STRING, description: "商品描述（30字內，繁體中文）" },
-            confidence: { type: SchemaType.STRING, description: "辨識信心度" },
-          },
-          required: ["product_name_zh", "product_name_ja", "brand", "estimated_price_jpy", "estimated_price_twd", "where_to_buy", "buy_url", "description", "confidence"],
-        },
+        responseSchema: responseSchema as any,
       },
     });
 
-    // 把圖片轉 base64（如有）
-    let imagePart: { inlineData: { mimeType: string; data: string } } | null = null;
+    // 圖片轉 base64
+    let imagePart: {
+      inlineData: { mimeType: string; data: string };
+    } | null = null;
     if (imageFile) {
       const bytes = await imageFile.arrayBuffer();
       const base64 = Buffer.from(bytes).toString("base64");
-      imagePart = { inlineData: { mimeType: imageFile.type || "image/jpeg", data: base64 } };
+      imagePart = {
+        inlineData: {
+          mimeType: imageFile.type || "image/jpeg",
+          data: base64,
+        },
+      };
     }
 
     // 呼叫 Gemini，最多嘗試 2 次
     for (let attempt = 1; attempt <= 2; attempt++) {
       const prompt =
         attempt === 1
-          ? buildPrompt(inputText, exchangeRate)
-          : buildRetryPrompt(inputText, exchangeRate);
+          ? buildPrompt(urlContent ? null : inputText, exchangeRate, urlContent)
+          : buildRetryPrompt(
+              urlContent ? null : inputText,
+              exchangeRate,
+              urlContent
+            );
 
       const contents = imagePart ? [prompt, imagePart] : [prompt];
       const result = await model.generateContent(contents);
@@ -154,7 +331,7 @@ export async function POST(req: NextRequest) {
       const raw = tryParseJson(responseText);
 
       if (raw) {
-        const aiData = normalizeAiResponse(raw, exchangeRate);
+        const aiData = normalizeAiResponse(raw, exchangeRate, userUrl);
         return NextResponse.json({
           success: true,
           data: aiData,
@@ -162,13 +339,14 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 第一次失敗：記錄 log 後繼續重試
       if (attempt === 1) {
-        console.warn("AI 第一次回覆解析失敗，正在重試。原始回覆：", responseText.slice(0, 200));
+        console.warn(
+          "AI 第一次回覆解析失敗，正在重試。原始回覆：",
+          responseText.slice(0, 200)
+        );
       }
     }
 
-    // 兩次都失敗
     return NextResponse.json({
       success: false,
       error: "AI 回覆格式異常，請重試",

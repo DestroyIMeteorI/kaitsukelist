@@ -114,7 +114,7 @@ export default function ListPage() {
     }, []
   );
 
-  async function handleConfirmAdd(quantity: number, weight?: number) {
+  async function handleConfirmAdd(data: AiResponse, quantity: number, weight?: number) {
     if (!user || !pendingResult) return;
     try {
       const { addItem } = await import("@/lib/supabase");
@@ -122,17 +122,17 @@ export default function ListPage() {
         user_id: user.id,
         input_text: pendingResult.inputText || null,
         input_image_url: pendingResult.imageUrl || null,
-        ai_product_name: pendingResult.data.product_name_zh,
-        ai_product_name_ja: pendingResult.data.product_name_ja,
-        ai_brand: pendingResult.data.brand,
-        ai_price_jpy: pendingResult.data.estimated_price_jpy,
-        ai_price_twd: pendingResult.data.estimated_price_twd,
+        ai_product_name: data.product_name_zh,
+        ai_product_name_ja: data.product_name_ja,
+        ai_brand: data.brand,
+        ai_price_jpy: data.estimated_price_jpy,
+        ai_price_twd: data.estimated_price_twd,
         ai_exchange_rate: pendingResult.exchangeRate,
-        ai_where_to_buy: pendingResult.data.where_to_buy,
-        ai_product_url: pendingResult.data.buy_url,
-        ai_description: pendingResult.data.description,
-        ai_confidence: pendingResult.data.confidence,
-        ai_summary: JSON.stringify(pendingResult.data),
+        ai_where_to_buy: data.where_to_buy,
+        ai_product_url: data.buy_url,
+        ai_description: data.description,
+        ai_confidence: data.confidence,
+        ai_summary: JSON.stringify(data),
         quantity,
         weight_g: weight ?? null,
       });

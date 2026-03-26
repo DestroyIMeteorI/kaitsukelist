@@ -33,6 +33,11 @@ export interface Item {
   updated_at: string;
 }
 
+export interface Variant {
+  name: string;
+  price_jpy: number;
+}
+
 export interface AiResponse {
   product_name_zh: string;
   product_name_ja: string;
@@ -40,9 +45,11 @@ export interface AiResponse {
   estimated_price_jpy: number;
   estimated_price_twd: number;
   where_to_buy: string[];
-  buy_url: string;
+  buy_url: string; // 使用者提供的 URL（非 AI 生成）
   description: string;
   confidence: "high" | "medium" | "low";
+  variants: Variant[];
+  selected_variant_index: number;
 }
 
 export interface ExchangeRate {

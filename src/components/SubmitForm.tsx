@@ -17,6 +17,9 @@ export default function SubmitForm({ onResult, userId, disabled }: SubmitFormPro
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 偵測輸入是否為 URL
+  const isUrlInput = /^https?:\/\//i.test(text.trim());
+
   // 處理圖片選擇 + 壓縮
   async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -108,18 +111,21 @@ export default function SubmitForm({ onResult, userId, disabled }: SubmitFormPro
 
   return (
     <div className={`rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-opacity ${disabled ? "opacity-50" : ""}`}>
-      {/* 文字輸入 */}
+      {/* 文字/網址輸入 */}
       <textarea
         value={text}
         onChange={(e) => {
           setText(e.target.value);
           setError("");
         }}
-        placeholder="輸入想買的商品名稱或描述&#10;例：樂敦眼藥水、白色戀人、資生堂防曬乳"
+        placeholder="輸入商品名稱、描述或貼上商品網址&#10;例：樂敦眼藥水、白色戀人 18枚、https://amazon.co.jp/..."
         className="w-full resize-none rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-base leading-relaxed transition-colors placeholder:text-gray-400 focus:border-sakura-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sakura-100"
         rows={2}
         disabled={isDisabled}
       />
+      {isUrlInput && (
+        <p className="mt-1 text-xs text-blue-500">🔗 已偵測商品網址，將自動抓取頁面資訊</p>
+      )}
 
       {/* 圖片預覽 */}
       {imagePreview && (
