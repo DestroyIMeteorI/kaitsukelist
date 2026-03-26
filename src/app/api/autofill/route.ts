@@ -140,48 +140,71 @@ export async function POST(req: NextRequest) {
     });
 
     const prompt = buildAutofillPrompt(body, exchangeRate);
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
 
-    let parsed: Record<string, unknown> | null = null;
-    try {
-      parsed = JSON.parse(responseText);
-    } catch {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
+    // 最多嘗試 2 次（與 identify route 一致）
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+
+        let parsed: Record<string, unknown> | null = null;
         try {
-          parsed = JSON.parse(jsonMatch[0]);
+          parsed = JSON.parse(responseText);
         } catch {
-          // ignore
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+            } catch {
+              // ignore
+            }
+          }
+        }
+
+        if (!parsed) {
+          if (attempt === 1) {
+            console.warn("AI 補齊第一次回覆解析失敗，正在重試。原始回覆：", responseText.slice(0, 200));
+            continue;
+          }
+          return NextResponse.json({
+            success: false,
+            error: "AI 回覆格式異常，請重試",
+          });
+        }
+
+        // 正規化回傳資料
+        const data = {
+          product_name_zh: String(parsed.product_name_zh || ""),
+          product_name_ja: String(parsed.product_name_ja || ""),
+          brand: String(parsed.brand || ""),
+          estimated_price_jpy: Math.round(Number(parsed.estimated_price_jpy) || 0),
+          where_to_buy: Array.isArray(parsed.where_to_buy)
+            ? parsed.where_to_buy.map(String)
+            : [],
+          weight_g: Math.round(Number(parsed.weight_g) || 0),
+          description: String(parsed.description || ""),
+        };
+
+        return NextResponse.json({
+          success: true,
+          data,
+          exchange_rate: exchangeRate,
+        });
+      } catch (err: unknown) {
+        lastError = err;
+        if (attempt === 1) {
+          console.warn("AI 補齊第一次呼叫失敗，正在重試:", err instanceof Error ? err.message : err);
+          continue;
         }
       }
     }
 
-    if (!parsed) {
-      return NextResponse.json({
-        success: false,
-        error: "AI 回覆格式異常，請重試",
-      });
-    }
-
-    // 正規化回傳資料
-    const data = {
-      product_name_zh: String(parsed.product_name_zh || ""),
-      product_name_ja: String(parsed.product_name_ja || ""),
-      brand: String(parsed.brand || ""),
-      estimated_price_jpy: Math.round(Number(parsed.estimated_price_jpy) || 0),
-      where_to_buy: Array.isArray(parsed.where_to_buy)
-        ? parsed.where_to_buy.map(String)
-        : [],
-      weight_g: Math.round(Number(parsed.weight_g) || 0),
-      description: String(parsed.description || ""),
-    };
-
-    return NextResponse.json({
-      success: true,
-      data,
-      exchange_rate: exchangeRate,
-    });
+    console.error("AI 補齊錯誤（重試後仍失敗）:", lastError);
+    return NextResponse.json(
+      { success: false, error: "AI 補齊失敗，請稍後再試" },
+      { status: 500 }
+    );
   } catch (error: unknown) {
     console.error("AI 補齊錯誤:", error);
     return NextResponse.json(
