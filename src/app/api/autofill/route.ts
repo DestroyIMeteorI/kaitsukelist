@@ -200,15 +200,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const errMsg = lastError instanceof Error ? lastError.message : String(lastError);
     console.error("AI 補齊錯誤（重試後仍失敗）:", lastError);
     return NextResponse.json(
-      { success: false, error: "AI 補齊失敗，請稍後再試" },
+      { success: false, error: "AI 補齊失敗，請稍後再試", debug: errMsg },
       { status: 500 }
     );
   } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     console.error("AI 補齊錯誤:", error);
     return NextResponse.json(
-      { success: false, error: "AI 補齊失敗，請稍後再試" },
+      { success: false, error: "AI 補齊失敗，請稍後再試", debug: errMsg },
       { status: 500 }
     );
   }
