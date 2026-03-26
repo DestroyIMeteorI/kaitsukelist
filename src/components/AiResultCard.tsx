@@ -32,6 +32,7 @@ export default function AiResultCard({
   );
   const [quantity, setQuantity] = useState(1);
   const [weightInput, setWeightInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(data.product_name_zh);
   const [editPriceJpy, setEditPriceJpy] = useState(
@@ -60,6 +61,8 @@ export default function AiResultCard({
   }
 
   function handleConfirm() {
+    if (submitting) return;
+    setSubmitting(true);
     const finalData: AiResponse = {
       ...data,
       product_name_zh: currentName,
@@ -385,9 +388,10 @@ export default function AiResultCard({
         </button>
         <button
           onClick={handleConfirm}
-          className="min-h-[48px] flex-1 rounded-xl bg-sakura-500 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-sakura-600 active:scale-[0.98]"
+          disabled={submitting}
+          className="min-h-[48px] flex-1 rounded-xl bg-sakura-500 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-sakura-600 active:scale-[0.98] disabled:opacity-50"
         >
-          ✓ 加入清單
+          {submitting ? "加入中..." : "✓ 加入清單"}
         </button>
       </div>
     </div>

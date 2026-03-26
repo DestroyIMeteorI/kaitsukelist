@@ -245,7 +245,7 @@ export default function ManualAddForm({
           <div className="flex items-center rounded-xl border border-gray-200">
             <button
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="min-h-[40px] min-w-[40px] text-lg text-gray-500 hover:text-gray-800"
+              className="min-h-[44px] min-w-[44px] text-lg text-gray-500 hover:text-gray-800"
               disabled={isDisabled}
             >
               −
@@ -255,7 +255,7 @@ export default function ManualAddForm({
             </span>
             <button
               onClick={() => setQuantity(quantity + 1)}
-              className="min-h-[40px] min-w-[40px] text-lg text-gray-500 hover:text-gray-800"
+              className="min-h-[44px] min-w-[44px] text-lg text-gray-500 hover:text-gray-800"
               disabled={isDisabled}
             >
               +
