@@ -57,34 +57,29 @@ export default function AiResultCard({
         </div>
       )}
 
-      {/* 商品圖片：AI 範例圖 + 用戶上傳圖 */}
-      {(data.image_url || imageUrl) && (
-        <div className="mb-3 flex gap-3">
-          {data.image_url && (
-            <div className="text-center">
-              <img
-                src={data.image_url}
-                alt={`${data.product_name_zh} 商品範例圖`}
-                className="h-28 w-28 rounded-xl border border-sakura-200 object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-              <p className="mt-1 text-xs text-gray-400">📷 商品範例</p>
-            </div>
-          )}
-          {imageUrl && (
-            <div className="text-center">
-              <Image
-                src={imageUrl}
-                alt="上傳的商品圖片"
-                width={112}
-                height={112}
-                className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
-              />
-              <p className="mt-1 text-xs text-gray-400">📎 你的圖片</p>
-            </div>
-          )}
-        </div>
-      )}
+      {/* 商品圖片：用戶上傳圖 + Google 圖片搜尋連結 */}
+      <div className="mb-3 flex items-center gap-3">
+        {imageUrl && (
+          <Image
+            src={imageUrl}
+            alt="上傳的商品圖片"
+            width={112}
+            height={112}
+            className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
+          />
+        )}
+        <a
+          href={`https://www.google.com/search?q=${encodeURIComponent(data.product_name_ja || data.product_name_zh)}&tbm=isch`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+        >
+          📷 查看商品圖片
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+          </svg>
+        </a>
+      </div>
 
       {/* 價格區塊 */}
       <div className="mb-3 rounded-xl bg-sakura-50 p-3">

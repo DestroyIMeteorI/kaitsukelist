@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import type { AiResponse } from "@/lib/types";
 
 // === AI 商品辨識 API ===
@@ -13,51 +13,26 @@ function buildPrompt(inputText: string | null, exchangeRate: number) {
 
 目前日幣兌台幣匯率：1 JPY ≈ ${exchangeRate} TWD
 
-請嚴格按照以下 JSON 格式回覆，不要加入任何其他文字或 markdown 標記：
-{
-  "product_name_zh": "商品中文名稱（繁體中文）",
-  "product_name_ja": "商品日文名稱",
-  "brand": "品牌名稱",
-  "estimated_price_jpy": 0,
-  "estimated_price_twd": 0,
-  "where_to_buy": ["店名1", "店名2"],
-  "buy_url": "日本購物網站連結",
-  "image_url": "商品圖片網址（從 Amazon.co.jp、樂天、或官方網站取得的商品圖片 URL）",
-  "description": "簡短商品描述（30字內，繁體中文）",
-  "confidence": "high"
-}
+回覆格式由 schema 控制，你只需填入正確的值。
 
-重要規則：
-- estimated_price_jpy：填日本當地零售價（數字，不含稅）
-- estimated_price_twd：填 estimated_price_jpy × ${exchangeRate} 四捨五入到整數
-- where_to_buy：列出日本實體店鋪名（如「松本清」「唐吉訶德」「BicCamera」等）
-- buy_url：優先提供 Amazon.co.jp 或日本樂天的商品連結
-- image_url：提供一張商品的圖片網址，優先從 Amazon.co.jp、樂天、或品牌官網取得（必須是可直接顯示的圖片 URL，以 .jpg/.png/.webp 結尾）
-- confidence：確定就填 high，有點不確定填 medium，很不確定填 low
-- 所有中文必須使用繁體中文（台灣用語）
-- 只回覆 JSON，不要有其他文字`;
+規則：
+- product_name_zh / description：使用繁體中文（台灣用語）
+- estimated_price_jpy：日本當地零售價（整數，不含稅）
+- estimated_price_twd：estimated_price_jpy × ${exchangeRate} 四捨五入到整數
+- where_to_buy：日本實體店鋪（如「松本清」「唐吉訶德」「BicCamera」）
+- buy_url：優先 Amazon.co.jp 或日本樂天的商品頁連結
+- confidence：確定 high、有點不確定 medium、很不確定 low`;
 
   if (inputText) {
-    return `${base}\n\n使用者想買的商品：「${inputText}」\n\n請使用 Google Search 搜尋確認商品資訊、價格和購買連結。`;
+    return `${base}\n\n使用者想買的商品：「${inputText}」`;
   }
 
-  return `${base}\n\n使用者上傳了一張商品圖片，請仔細觀察圖片中的：
-- 商品名稱文字（中文/日文/英文）
-- 品牌 Logo
-- 包裝特徵和顏色
-- 產品規格
-
-請辨識這個商品，並使用 Google Search 搜尋確認商品資訊、價格和購買連結。
-如果圖片模糊或無法辨識，confidence 填 low。`;
+  return `${base}\n\n使用者上傳了一張商品圖片，請辨識圖片中的商品（注意名稱文字、品牌 Logo、包裝特徵）。如果圖片模糊或無法辨識，confidence 填 low。`;
 }
 
-// 僅在失敗重試時使用，去掉所有多餘說明，只要純 JSON
+// 僅在失敗重試時使用的精簡 prompt
 function buildRetryPrompt(inputText: string | null, exchangeRate: number) {
-  return `只輸出一個 JSON 物件，不含任何說明文字。格式如下：
-{"product_name_zh":"","product_name_ja":"","brand":"","estimated_price_jpy":0,"estimated_price_twd":0,"where_to_buy":[],"buy_url":"","image_url":"","description":"","confidence":"medium"}
-
-匯率：1 JPY = ${exchangeRate} TWD
-${inputText ? `商品：${inputText}` : "請辨識圖片中的商品"}`;
+  return `辨識以下日本商品，匯率 1 JPY = ${exchangeRate} TWD。${inputText ? `商品：${inputText}` : "請辨識圖片中的商品。"}`;
 }
 
 // 從 AI 回覆的原始物件中提取並補足必要欄位，避免前端因缺欄位崩潰
@@ -77,7 +52,6 @@ function normalizeAiResponse(raw: Record<string, unknown>, exchangeRate: number)
     estimated_price_twd: priceTwd,
     where_to_buy: Array.isArray(raw.where_to_buy) ? raw.where_to_buy.map(String) : [],
     buy_url: String(raw.buy_url || ""),
-    image_url: String(raw.image_url || ""),
     description: String(raw.description || ""),
     confidence,
   };
@@ -133,13 +107,28 @@ export async function POST(req: NextRequest) {
       // 用預設匯率
     }
 
-    // 選擇 Gemini 模型
+    // 選擇 Gemini 模型 + 結構化 JSON schema
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
-        temperature: 0.3, // 低溫度 = 更精確、較少創意
+        temperature: 0.3,
         maxOutputTokens: 1024,
-        responseMimeType: "application/json", // 強制回傳純 JSON，避免 AI 加入多餘說明文字
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          properties: {
+            product_name_zh: { type: SchemaType.STRING, description: "商品中文名稱（繁體中文）" },
+            product_name_ja: { type: SchemaType.STRING, description: "商品日文名稱" },
+            brand: { type: SchemaType.STRING, description: "品牌名稱" },
+            estimated_price_jpy: { type: SchemaType.INTEGER, description: "日本零售價（日幣整數）" },
+            estimated_price_twd: { type: SchemaType.INTEGER, description: "台幣估算（整數）" },
+            where_to_buy: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "日本可購買店鋪" },
+            buy_url: { type: SchemaType.STRING, description: "購買連結" },
+            description: { type: SchemaType.STRING, description: "商品描述（30字內，繁體中文）" },
+            confidence: { type: SchemaType.STRING, description: "辨識信心度" },
+          },
+          required: ["product_name_zh", "product_name_ja", "brand", "estimated_price_jpy", "estimated_price_twd", "where_to_buy", "buy_url", "description", "confidence"],
+        },
       },
     });
 

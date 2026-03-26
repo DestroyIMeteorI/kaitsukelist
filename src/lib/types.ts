@@ -41,7 +41,6 @@ export interface AiResponse {
   estimated_price_twd: number;
   where_to_buy: string[];
   buy_url: string;
-  image_url: string;
   description: string;
   confidence: "high" | "medium" | "low";
 }
