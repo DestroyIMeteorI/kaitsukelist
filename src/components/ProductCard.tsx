@@ -61,7 +61,7 @@ function ProductCard({
     setIsEditing(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!onEdit) return;
     const priceJpy = Number(editPriceJpy) || 0;
     const whereToBuy = editWhere
@@ -69,7 +69,7 @@ function ProductCard({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    onEdit(item.id, {
+    await onEdit(item.id, {
       ai_product_name: editName.trim() || undefined,
       ai_product_name_ja: editNameJa.trim() || undefined,
       ai_brand: editBrand.trim() || undefined,

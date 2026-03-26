@@ -104,7 +104,9 @@ export default function ListPage() {
         (item.ai_product_name || "").toLowerCase().includes(q) ||
         (item.ai_product_name_ja || "").toLowerCase().includes(q) ||
         (item.ai_brand || "").toLowerCase().includes(q) ||
-        (item.input_text || "").toLowerCase().includes(q)
+        (item.input_text || "").toLowerCase().includes(q) ||
+        (item.note || "").toLowerCase().includes(q) ||
+        (item.ai_description || "").toLowerCase().includes(q)
       );
     }
     return [...result].sort((a, b) => {
