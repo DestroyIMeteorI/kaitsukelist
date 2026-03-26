@@ -29,6 +29,8 @@ export interface Item {
   note: string | null;
   quantity: number;
   weight_g: number | null; // 商品重量（克），選填
+  actual_price_jpy: number | null; // 實際購買日幣價格
+  actual_quantity: number | null; // 實際購買數量
   created_at: string;
   updated_at: string;
 }

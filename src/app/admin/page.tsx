@@ -135,14 +135,29 @@ export default function AdminPage() {
     return users.filter((u) => u.name.toLowerCase().includes(q));
   }, [users, userSearchQuery]);
 
-  async function handleStatusChange(itemId: string, status: Item["status"]) {
+  async function handleStatusChange(
+    itemId: string,
+    status: Item["status"],
+    purchaseDetails?: { actual_price_jpy: number; actual_quantity: number }
+  ) {
     try {
       const { updateItemStatus } = await import("@/lib/supabase");
-      await updateItemStatus(itemId, status);
+      await updateItemStatus(itemId, status, purchaseDetails ? {
+        actual_price_jpy: purchaseDetails.actual_price_jpy,
+        actual_quantity: purchaseDetails.actual_quantity,
+      } : undefined);
       setItems((prev) => prev.map((i) =>
-        i.id === itemId ? { ...i, status, updated_at: new Date().toISOString() } : i
+        i.id === itemId ? {
+          ...i,
+          status,
+          ...(purchaseDetails ? {
+            actual_price_jpy: purchaseDetails.actual_price_jpy,
+            actual_quantity: purchaseDetails.actual_quantity,
+          } : {}),
+          updated_at: new Date().toISOString(),
+        } : i
       ));
-      showToast("狀態已更新", "success");
+      showToast(status === "bought" ? "已標記為已買到" : "狀態已更新", "success");
     } catch { showToast("更新失敗，請重試", "error"); }
   }
 

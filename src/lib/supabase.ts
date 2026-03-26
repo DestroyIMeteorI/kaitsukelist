@@ -175,13 +175,15 @@ export async function updateItem(itemId: string, fields: EditableItemFields) {
 export async function updateItemStatus(
   itemId: string,
   status: string,
-  note?: string
+  extra?: { note?: string; actual_price_jpy?: number; actual_quantity?: number }
 ) {
   const { error } = await supabase
     .from("items")
     .update({
       status,
-      note: note || null,
+      note: extra?.note || null,
+      actual_price_jpy: extra?.actual_price_jpy ?? null,
+      actual_quantity: extra?.actual_quantity ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", itemId);

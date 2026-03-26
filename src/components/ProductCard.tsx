@@ -5,11 +5,16 @@ import Image from "next/image";
 import type { Item, EditableItemFields } from "@/lib/types";
 import { STATUS_MAP, STATUS_COLORS } from "@/lib/types";
 
+interface PurchaseDetails {
+  actual_price_jpy: number;
+  actual_quantity: number;
+}
+
 interface ProductCardProps {
   item: Item;
   showUser?: boolean;
   onDelete?: (id: string) => void;
-  onStatusChange?: (id: string, status: Item["status"]) => void;
+  onStatusChange?: (id: string, status: Item["status"], purchaseDetails?: PurchaseDetails) => void;
   onEdit?: (id: string, fields: EditableItemFields) => void;
 }
 
@@ -22,6 +27,9 @@ function ProductCard({
 }: ProductCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showBoughtForm, setShowBoughtForm] = useState(false);
+  const [actualPriceJpy, setActualPriceJpy] = useState(String(item.ai_price_jpy || ""));
+  const [actualQuantity, setActualQuantity] = useState(String(item.quantity || 1));
 
   // 編輯表單的本地狀態
   const [editName, setEditName] = useState(item.ai_product_name || "");
@@ -178,12 +186,87 @@ function ProductCard({
             </p>
           )}
 
+          {/* 實際購買資訊（已買到才顯示）*/}
+          {item.status === "bought" && item.actual_price_jpy != null && (
+            <div className="mt-2 rounded-xl bg-emerald-50 p-2.5">
+              <p className="text-xs font-medium text-emerald-700">💰 實際購買</p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+                <span className="font-bold text-emerald-800">¥{item.actual_price_jpy.toLocaleString()}</span>
+                {item.ai_exchange_rate && (
+                  <>
+                    <span className="text-emerald-400">≈</span>
+                    <span className="font-bold text-emerald-700">
+                      NT${Math.round(item.actual_price_jpy * Number(item.ai_exchange_rate)).toLocaleString()}
+                    </span>
+                  </>
+                )}
+                {item.actual_quantity && item.actual_quantity > 1 && (
+                  <span className="text-xs text-emerald-600">× {item.actual_quantity}</span>
+                )}
+                {item.actual_quantity && item.actual_quantity > 1 && item.ai_exchange_rate && (
+                  <span className="text-xs text-emerald-500">
+                    （共 NT${Math.round(item.actual_price_jpy * Number(item.ai_exchange_rate) * item.actual_quantity).toLocaleString()}）
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 已買確認表單 */}
+          {showBoughtForm && onStatusChange && (
+            <div className="mt-3 animate-scale-in rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <p className="mb-2 text-xs font-medium text-emerald-700">💰 輸入實際購買資訊</p>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="mb-0.5 block text-xs text-emerald-600">實際日幣價格</label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">¥</span>
+                    <input type="number" min="0" value={actualPriceJpy}
+                      onChange={(e) => setActualPriceJpy(e.target.value)}
+                      className="w-full rounded-lg border border-emerald-200 bg-white py-2 pl-6 pr-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-200" />
+                  </div>
+                  {Number(actualPriceJpy) > 0 && item.ai_exchange_rate && (
+                    <p className="mt-0.5 text-xs text-emerald-500">
+                      ≈ NT${Math.round(Number(actualPriceJpy) * Number(item.ai_exchange_rate)).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+                <div className="w-20">
+                  <label className="mb-0.5 block text-xs text-emerald-600">數量</label>
+                  <input type="number" min="1" max="99" value={actualQuantity}
+                    onChange={(e) => setActualQuantity(e.target.value)}
+                    className="w-full rounded-lg border border-emerald-200 bg-white px-2 py-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-200" />
+                </div>
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => setShowBoughtForm(false)}
+                  className="min-h-[36px] flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+                  取消
+                </button>
+                <button onClick={() => {
+                  onStatusChange(item.id, "bought", {
+                    actual_price_jpy: Math.round(Number(actualPriceJpy)) || 0,
+                    actual_quantity: Number(actualQuantity) || 1,
+                  });
+                  setShowBoughtForm(false);
+                }}
+                  className="min-h-[36px] flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+                  ✓ 確認已買
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 操作按鈕 */}
           <div className="mt-3 flex flex-wrap gap-2">
             {onStatusChange && (
               <>
-                {item.status !== "bought" && (
-                  <button onClick={() => onStatusChange(item.id, "bought")}
+                {item.status !== "bought" && !showBoughtForm && (
+                  <button onClick={() => {
+                    setActualPriceJpy(String(item.ai_price_jpy || ""));
+                    setActualQuantity(String(item.quantity || 1));
+                    setShowBoughtForm(true);
+                  }}
                     className="min-h-[44px] rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 active:scale-[0.97]">
                     ✓ 已買
                   </button>
