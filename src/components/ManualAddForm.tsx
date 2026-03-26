@@ -10,6 +10,7 @@ interface ManualAddFormProps {
     priceJpy: number;
     priceTwd: number;
     brand?: string;
+    productUrl?: string;
     imageUrl?: string;
     weightG?: number;
     quantity: number;
@@ -26,6 +27,7 @@ export default function ManualAddForm({
   const [name, setName] = useState("");
   const [priceJpy, setPriceJpy] = useState("");
   const [brand, setBrand] = useState("");
+  const [productUrl, setProductUrl] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [weightInput, setWeightInput] = useState("");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -93,6 +95,7 @@ export default function ManualAddForm({
         priceJpy: Math.round(Number(priceJpy)),
         priceTwd,
         brand: brand.trim() || undefined,
+        productUrl: productUrl.trim() || undefined,
         imageUrl,
         weightG: weightInput ? Number(weightInput) : undefined,
         quantity,
@@ -102,6 +105,7 @@ export default function ManualAddForm({
       setName("");
       setPriceJpy("");
       setBrand("");
+      setProductUrl("");
       setQuantity(1);
       setWeightInput("");
       clearImage();
@@ -146,6 +150,21 @@ export default function ManualAddForm({
           value={brand}
           onChange={(e) => setBrand(e.target.value)}
           placeholder="例：ISHIYA、資生堂"
+          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-sakura-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-sakura-100"
+          disabled={isDisabled}
+        />
+      </div>
+
+      {/* 商品網址（選填） */}
+      <div className="mb-3">
+        <label className="mb-1 block text-xs font-medium text-gray-500">
+          商品網址（選填）
+        </label>
+        <input
+          type="url"
+          value={productUrl}
+          onChange={(e) => setProductUrl(e.target.value)}
+          placeholder="例：https://amazon.co.jp/dp/..."
           className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-sakura-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-sakura-100"
           disabled={isDisabled}
         />

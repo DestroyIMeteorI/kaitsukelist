@@ -158,6 +158,7 @@ export default function ListPage() {
     priceJpy: number;
     priceTwd: number;
     brand?: string;
+    productUrl?: string;
     imageUrl?: string;
     weightG?: number;
     quantity: number;
@@ -176,7 +177,7 @@ export default function ListPage() {
         ai_price_twd: item.priceTwd,
         ai_exchange_rate: exchangeRate?.rate ?? 0.22,
         ai_where_to_buy: null,
-        ai_product_url: null,
+        ai_product_url: item.productUrl || null,
         ai_description: null,
         ai_confidence: null,
         ai_summary: null,
