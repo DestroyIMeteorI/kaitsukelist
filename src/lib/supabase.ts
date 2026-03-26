@@ -12,29 +12,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // === 使用者相關操作 ===
 
-// 用名字找使用者，找不到就自動建立一個（無 PIN 版，舊有邏輯保留給 getOrCreateUser）
-export async function getOrCreateUser(name: string) {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("名字不能是空的");
-
-  const { data: existing } = await supabase
-    .from("users")
-    .select("*")
-    .eq("name", trimmed)
-    .single();
-
-  if (existing) return existing;
-
-  const { data: newUser, error } = await supabase
-    .from("users")
-    .insert({ name: trimmed, role: "user" })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return newUser;
-}
-
 // 用名字查詢使用者（含 pin_hash，供 PIN 驗證用）
 export async function getUserByName(name: string) {
   const { data } = await supabase
@@ -42,7 +19,7 @@ export async function getUserByName(name: string) {
     .select("id, name, role, created_at, pin_hash")
     .eq("name", name.trim())
     .single();
-  return data as { id: string; name: string; role: string; created_at: string; pin_hash: string | null } | null;
+  return data as { id: string; name: string; role: "admin" | "user"; created_at: string; pin_hash: string | null } | null;
 }
 
 // 建立新使用者（含 PIN hash）

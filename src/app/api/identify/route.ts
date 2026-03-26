@@ -22,6 +22,7 @@ function buildPrompt(inputText: string | null, exchangeRate: number) {
   "estimated_price_twd": 0,
   "where_to_buy": ["店名1", "店名2"],
   "buy_url": "日本購物網站連結",
+  "image_url": "商品圖片網址（從 Amazon.co.jp、樂天、或官方網站取得的商品圖片 URL）",
   "description": "簡短商品描述（30字內，繁體中文）",
   "confidence": "high"
 }
@@ -31,6 +32,7 @@ function buildPrompt(inputText: string | null, exchangeRate: number) {
 - estimated_price_twd：填 estimated_price_jpy × ${exchangeRate} 四捨五入到整數
 - where_to_buy：列出日本實體店鋪名（如「松本清」「唐吉訶德」「BicCamera」等）
 - buy_url：優先提供 Amazon.co.jp 或日本樂天的商品連結
+- image_url：提供一張商品的圖片網址，優先從 Amazon.co.jp、樂天、或品牌官網取得（必須是可直接顯示的圖片 URL，以 .jpg/.png/.webp 結尾）
 - confidence：確定就填 high，有點不確定填 medium，很不確定填 low
 - 所有中文必須使用繁體中文（台灣用語）
 - 只回覆 JSON，不要有其他文字`;
@@ -52,7 +54,7 @@ function buildPrompt(inputText: string | null, exchangeRate: number) {
 // 僅在失敗重試時使用，去掉所有多餘說明，只要純 JSON
 function buildRetryPrompt(inputText: string | null, exchangeRate: number) {
   return `只輸出一個 JSON 物件，不含任何說明文字。格式如下：
-{"product_name_zh":"","product_name_ja":"","brand":"","estimated_price_jpy":0,"estimated_price_twd":0,"where_to_buy":[],"buy_url":"","description":"","confidence":"medium"}
+{"product_name_zh":"","product_name_ja":"","brand":"","estimated_price_jpy":0,"estimated_price_twd":0,"where_to_buy":[],"buy_url":"","image_url":"","description":"","confidence":"medium"}
 
 匯率：1 JPY = ${exchangeRate} TWD
 ${inputText ? `商品：${inputText}` : "請辨識圖片中的商品"}`;
@@ -75,6 +77,7 @@ function normalizeAiResponse(raw: Record<string, unknown>, exchangeRate: number)
     estimated_price_twd: priceTwd,
     where_to_buy: Array.isArray(raw.where_to_buy) ? raw.where_to_buy.map(String) : [],
     buy_url: String(raw.buy_url || ""),
+    image_url: String(raw.image_url || ""),
     description: String(raw.description || ""),
     confidence,
   };

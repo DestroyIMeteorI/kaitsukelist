@@ -57,16 +57,32 @@ export default function AiResultCard({
         </div>
       )}
 
-      {/* 用戶上傳的圖片 */}
-      {imageUrl && (
-        <div className="mb-3">
-          <Image
-            src={imageUrl}
-            alt="上傳的商品圖片"
-            width={112}
-            height={112}
-            className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
-          />
+      {/* 商品圖片：AI 範例圖 + 用戶上傳圖 */}
+      {(data.image_url || imageUrl) && (
+        <div className="mb-3 flex gap-3">
+          {data.image_url && (
+            <div className="text-center">
+              <img
+                src={data.image_url}
+                alt={`${data.product_name_zh} 商品範例圖`}
+                className="h-28 w-28 rounded-xl border border-sakura-200 object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+              <p className="mt-1 text-xs text-gray-400">📷 商品範例</p>
+            </div>
+          )}
+          {imageUrl && (
+            <div className="text-center">
+              <Image
+                src={imageUrl}
+                alt="上傳的商品圖片"
+                width={112}
+                height={112}
+                className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
+              />
+              <p className="mt-1 text-xs text-gray-400">📎 你的圖片</p>
+            </div>
+          )}
         </div>
       )}
 

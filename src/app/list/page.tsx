@@ -61,8 +61,14 @@ export default function ListPage() {
       }
 
       try {
-        const { getOrCreateUser, getUserItems } = await import("@/lib/supabase");
-        const userData = await getOrCreateUser(name);
+        const { getUserByName, getUserItems } = await import("@/lib/supabase");
+        const found = await getUserByName(name);
+        if (!found) {
+          localStorage.removeItem("userName");
+          router.push("/");
+          return;
+        }
+        const userData: User = { id: found.id, name: found.name, role: found.role, created_at: found.created_at };
         setUser(userData);
         const freshItems = await getUserItems(userData.id) || [];
         setItems(freshItems);
