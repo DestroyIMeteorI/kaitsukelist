@@ -52,6 +52,8 @@ export interface AiResponse {
   confidence: "high" | "medium" | "low";
   variants: Variant[];
   selected_variant_index: number;
+  product_image_url?: string; // 從商品頁面抽取的圖片 URL
+  product_code?: string;      // 商品番号（如 UNIQLO 471809）
 }
 
 export interface ExchangeRate {
@@ -88,10 +90,10 @@ export interface UserWithStats {
 
 // 狀態的中文對照
 export const STATUS_MAP: Record<Item["status"], string> = {
-  pending: "待處理",
-  bought: "已買到",
-  unavailable: "買不到",
-  out_of_stock: "缺貨中",
+  pending: "⏳ 等待購買",
+  bought: "✅ 已買到",
+  unavailable: "❌ 買不到",
+  out_of_stock: "😢 缺貨中",
 };
 
 export const STATUS_COLORS: Record<Item["status"], string> = {

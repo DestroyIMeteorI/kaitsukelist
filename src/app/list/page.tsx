@@ -124,6 +124,41 @@ export default function ListPage() {
     }, []
   );
 
+  /** SubmitForm 確認卡片直接確認（quantity=1，不展開完整表單） */
+  async function handleQuickConfirm(data: AiResponse, rate: number, note: string, imageUrl?: string) {
+    if (!user) return;
+    try {
+      const { addItem } = await import("@/lib/supabase");
+      const newItem = await addItem({
+        user_id: user.id,
+        input_image_url: imageUrl || data.product_image_url || null,
+        ai_product_name: data.product_name_zh,
+        ai_product_name_ja: data.product_name_ja,
+        ai_brand: data.brand,
+        ai_price_jpy: data.estimated_price_jpy,
+        ai_price_twd: data.estimated_price_twd,
+        ai_exchange_rate: rate,
+        ai_where_to_buy: data.where_to_buy,
+        ai_product_url: data.buy_url,
+        ai_description: data.description,
+        ai_confidence: data.confidence,
+        ai_summary: JSON.stringify(data),
+        quantity: 1,
+        note: note || (data.product_code ? `品番: ${data.product_code}` : null),
+      });
+      const updatedItems = [newItem, ...items];
+      setItems(updatedItems);
+      showToast("已加入清單！", "success");
+      if (user) {
+        const name = localStorage.getItem("userName") || "";
+        localStorage.setItem(`${CACHE_KEY_PREFIX}${name}`, JSON.stringify({ user, items: updatedItems }));
+      }
+    } catch (err) {
+      console.error("加入清單失敗:", err);
+      showToast("加入清單失敗，請重試", "error");
+    }
+  }
+
   async function handleConfirmAdd(data: AiResponse, quantity: number, weight?: number) {
     if (!user || !pendingResult) return;
     try {
@@ -131,7 +166,8 @@ export default function ListPage() {
       const newItem = await addItem({
         user_id: user.id,
         input_text: pendingResult.inputText || null,
-        input_image_url: pendingResult.imageUrl || null,
+        // 優先用使用者上傳的圖片，其次用從商品頁面抽取的圖片
+        input_image_url: pendingResult.imageUrl || data.product_image_url || null,
         ai_product_name: data.product_name_zh,
         ai_product_name_ja: data.product_name_ja,
         ai_brand: data.brand,
@@ -145,6 +181,8 @@ export default function ListPage() {
         ai_summary: JSON.stringify(data),
         quantity,
         weight_g: weight ?? null,
+        // 若有商品番号，自動存入備註
+        note: data.product_code ? `品番: ${data.product_code}` : null,
       });
       const updatedItems = [newItem, ...items];
       setItems(updatedItems);
@@ -169,6 +207,7 @@ export default function ListPage() {
     imageUrl?: string;
     weightG?: number;
     quantity: number;
+    note?: string;
   }) {
     if (!user) return;
     try {
@@ -190,6 +229,7 @@ export default function ListPage() {
         ai_summary: null,
         quantity: item.quantity,
         weight_g: item.weightG ?? null,
+        note: item.note || null,
       });
       const updatedItems = [newItem, ...items];
       setItems(updatedItems);
@@ -343,25 +383,45 @@ export default function ListPage() {
       </header>
 
       <main className="space-y-4 px-4 pt-4">
-        {/* 統計 */}
-        {items.length > 0 && (
-          <div className="flex gap-3">
-            <div className="flex-1 rounded-xl bg-sakura-50 p-3 text-center">
-              <p className="text-2xl font-bold text-sakura-600">{items.length}</p>
-              <p className="text-xs text-gray-500">商品數</p>
+        {/* ListStats 統計卡片 */}
+        {items.length > 0 && (() => {
+          const pending = items.filter((i) => i.status === "pending").length;
+          const bought = items.filter((i) => i.status === "bought").length;
+          const spentJpy = items
+            .filter((i) => i.status === "bought")
+            .reduce((sum, i) => sum + ((i.actual_price_jpy ?? i.ai_price_jpy ?? 0) * (i.actual_quantity ?? i.quantity ?? 1)), 0);
+          const rate = exchangeRate?.rate ?? 0.2012;
+          return (
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-sakura-50 p-3 text-center">
+                <p className="text-2xl font-bold text-sakura-600">{pending}</p>
+                <p className="text-xs text-gray-500">待購買</p>
+              </div>
+              <div className="rounded-xl bg-emerald-50 p-3 text-center">
+                <p className="text-2xl font-bold text-emerald-600">{bought}</p>
+                <p className="text-xs text-gray-500">已買到</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 p-3 text-center">
+                {spentJpy > 0 ? (
+                  <>
+                    <p className="text-lg font-bold leading-tight text-amber-600">
+                      ¥{(spentJpy / 1000).toFixed(1)}k
+                    </p>
+                    <p className="text-xs text-gray-400">≈NT${Math.round(spentJpy * rate / 1000).toFixed(1)}k</p>
+                    <p className="text-xs text-gray-500">已花費</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-lg font-bold leading-tight text-amber-600">
+                      NT${(totalTwd / 1000).toFixed(1)}k
+                    </p>
+                    <p className="text-xs text-gray-500">預估花費</p>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex-1 rounded-xl bg-sakura-50 p-3 text-center">
-              <p className="text-2xl font-bold text-sakura-600">${totalTwd.toLocaleString()}</p>
-              <p className="text-xs text-gray-500">預估台幣</p>
-            </div>
-            <div className="flex-1 rounded-xl bg-emerald-50 p-3 text-center">
-              <p className="text-2xl font-bold text-emerald-600">
-                {items.filter((i) => i.status === "bought").length}
-              </p>
-              <p className="text-xs text-gray-500">已買到</p>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 新增模式切換 + 表單 */}
         <div>
@@ -379,7 +439,12 @@ export default function ListPage() {
             </button>
           </div>
           {addMode === "ai" && user && (
-            <SubmitForm onResult={handleAiResult} userId={user.id} disabled={!isOnline} />
+            <SubmitForm
+              onResult={handleAiResult}
+              onQuickConfirm={handleQuickConfirm}
+              userId={user.id}
+              disabled={!isOnline}
+            />
           )}
           {addMode === "manual" && user && exchangeRate && (
             <ManualAddForm

@@ -146,6 +146,7 @@ export async function addItem(item: {
   ai_summary?: string | null;
   quantity?: number;
   weight_g?: number | null;
+  note?: string | null;
 }) {
   const { data, error } = await supabase
     .from("items")

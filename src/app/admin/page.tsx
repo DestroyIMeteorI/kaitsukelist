@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
+import BoughtModal from "@/components/BoughtModal";
 import Toast, { useToast } from "@/components/Toast";
 import type { Item, EditableItemFields, UserWithStats } from "@/lib/types";
 import { STATUS_MAP } from "@/lib/types";
@@ -33,6 +34,8 @@ export default function AdminPage() {
   const [editingName, setEditingName] = useState("");
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
   const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [fieldMode, setFieldMode] = useState(false);
+  const [boughtModalItem, setBoughtModalItem] = useState<Item | null>(null);
 
   useEffect(() => {
     localStorage.removeItem("adminPassword");
@@ -330,6 +333,18 @@ export default function AdminPage() {
             🔐 管理後台
           </h1>
           <div className="flex gap-2">
+            {activeTab === "items" && (
+              <button
+                onClick={() => setFieldMode((v) => !v)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  fieldMode
+                    ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {fieldMode ? "🏪 現場模式" : "🏪 現場模式"}
+              </button>
+            )}
             <button onClick={() => { if (activeTab === "users") loadUsers(); else loadItems(); }}
               className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:bg-gray-200">
               🔄 重新整理
@@ -620,7 +635,73 @@ export default function AdminPage() {
               {items.length === 0 ? "還沒有人提交商品" : searchQuery ? `找不到符合「${searchQuery}」的商品` : "篩選條件下沒有商品"}
             </p>
           </div>
+        ) : fieldMode ? (
+          /* ── 現場模式：大卡片 + 大按鈕 ── */
+          <div className="space-y-3">
+            {/* 待買優先，已買排後面（半透明） */}
+            {[...filtered].sort((a, b) => {
+              if (a.status === "bought" && b.status !== "bought") return 1;
+              if (a.status !== "bought" && b.status === "bought") return -1;
+              return 0;
+            }).map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-2xl border-2 p-4 transition-all ${
+                  item.status === "bought"
+                    ? "border-emerald-200 bg-emerald-50 opacity-60"
+                    : "border-sakura-200 bg-white shadow-sm"
+                }`}
+              >
+                {/* 第一行：商品名 + 委託人 + 價格 */}
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words font-semibold leading-snug text-gray-900">
+                      {item.ai_product_name || item.input_text || "未知商品"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      {item.user_name} 委託 {item.quantity > 1 && `× ${item.quantity}`}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-lg font-bold text-sakura-600">
+                    {item.ai_price_jpy ? `¥${item.ai_price_jpy.toLocaleString()}` : "—"}
+                  </span>
+                </div>
+
+                {/* 第二行：備註（醒目顯示） */}
+                {item.note && (
+                  <div className="mb-3 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2">
+                    <p className="text-sm text-yellow-800">📝 {item.note}</p>
+                  </div>
+                )}
+
+                {/* 第三行：操作按鈕 */}
+                {item.status !== "bought" ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setBoughtModalItem(item)}
+                      className="flex-1 rounded-xl bg-emerald-500 py-3 text-base font-semibold text-white transition-all active:scale-[0.98] hover:bg-emerald-600"
+                    >
+                      ✅ 已買到
+                    </button>
+                    <button
+                      onClick={() => handleStatusChange(item.id, "unavailable")}
+                      className="rounded-xl bg-gray-100 px-4 py-3 text-sm font-medium text-gray-600 transition-all active:scale-[0.98] hover:bg-gray-200"
+                    >
+                      ❌ 沒貨
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-center text-sm text-emerald-600">
+                    ✅ 已購買
+                    {item.actual_price_jpy ? ` — ¥${item.actual_price_jpy.toLocaleString()}` : ""}
+                    {item.actual_quantity && item.actual_quantity > 1 ? ` × ${item.actual_quantity}` : ""}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
         ) : (
+          /* ── 一般模式：ProductCard ── */
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {filtered.map((item) => (
               <ProductCard
@@ -634,6 +715,18 @@ export default function AdminPage() {
               />
             ))}
           </div>
+        )}
+
+        {/* 已買到 Modal */}
+        {boughtModalItem && (
+          <BoughtModal
+            item={boughtModalItem}
+            onConfirm={(details) => {
+              handleStatusChange(boughtModalItem.id, "bought", details);
+              setBoughtModalItem(null);
+            }}
+            onClose={() => setBoughtModalItem(null)}
+          />
         )}
         </>)}
       </main>

@@ -107,32 +107,93 @@ function extractJsonLd($: cheerio.CheerioAPI, targetType: string): any {
   return null;
 }
 
+/** 從 JSON-LD offers 欄位解析出價格與所有尺寸/規格 variants */
+function extractOffersData(offers: any): {
+  price: number;
+  variants: Array<{ name: string; price_jpy: number }>;
+} {
+  if (!offers) return { price: 0, variants: [] };
+
+  // Case 1: offers 是陣列（各尺寸各自一個 Offer）
+  if (Array.isArray(offers)) {
+    const variants = offers
+      .map((o: any) => ({
+        name: String(o.name || o.sku || o.additionalProperty?.find((p: any) => p.name === 'size')?.value || ''),
+        price_jpy: Math.round(Number(o.price) || 0),
+      }))
+      .filter((v) => v.price_jpy > 0);
+    // 取最常見的價格（眾數）作為主要價格
+    const priceCounts: Record<number, number> = {};
+    for (const v of variants) priceCounts[v.price_jpy] = (priceCounts[v.price_jpy] || 0) + 1;
+    const price = variants.length > 0
+      ? Number(Object.entries(priceCounts).sort((a, b) => b[1] - a[1])[0][0])
+      : 0;
+    return { price, variants };
+  }
+
+  // Case 2: AggregateOffer 裡面有 offers 子陣列
+  if (offers['@type'] === 'AggregateOffer' && Array.isArray(offers.offers)) {
+    const inner = extractOffersData(offers.offers);
+    // AggregateOffer 的 lowPrice 通常是最低價，不一定是正確單一商品價
+    // 若 inner.price 有效就用它，否則用 lowPrice
+    const price = inner.price || Math.round(Number(offers.lowPrice) || 0);
+    return { price, variants: inner.variants };
+  }
+
+  // Case 3: 單一 Offer 物件
+  const price = Math.round(Number(offers.price) || Number(offers.lowPrice) || 0);
+  return { price, variants: [] };
+}
+
+/** 從 JSON-LD image 欄位解析出完整圖片 URL */
+function extractImageUrl(imageField: any, pageUrl: string): string | null {
+  let raw: string | null = null;
+  if (typeof imageField === 'string') raw = imageField;
+  else if (Array.isArray(imageField) && imageField.length > 0) raw = String(imageField[0]);
+  else if (imageField?.url) raw = String(imageField.url);
+  else if (imageField?.contentUrl) raw = String(imageField.contentUrl);
+
+  if (!raw) return null;
+  try {
+    return new URL(raw, pageUrl).href;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * 用 cheerio 從 HTML 抽取商品資訊。
+ * 用 cheerio 從 HTML 抽取商品資訊（包含圖片和所有尺寸 variants）。
  * 依序嘗試：JSON-LD → OG meta + price selector。
  * 回傳 null 代表資訊不夠，需要繼續用 AI 辨識。
  */
-function extractProductFromHtml(html: string, _hostname: string): {
+function extractProductFromHtml(html: string, pageUrl: string): {
   productName: string;
   priceJpy: number;
   brand: string;
   description: string;
+  imageUrl: string | null;
+  variants: Array<{ name: string; price_jpy: number }>;
 } | null {
   const $ = cheerio.load(html);
+
+  // 圖片優先從 og:image 抓（所有路徑都可用）
+  const ogImageRaw = $('meta[property="og:image"]').attr('content') || '';
+  const ogImage = ogImageRaw ? (() => {
+    try { return new URL(ogImageRaw, pageUrl).href; } catch { return null; }
+  })() : null;
 
   // 第一優先：JSON-LD（最準確）
   const jsonLd = extractJsonLd($, 'Product');
   if (jsonLd && jsonLd.name) {
-    const price = jsonLd.offers?.price
-      ? Number(jsonLd.offers.price)
-      : jsonLd.offers?.lowPrice
-        ? Number(jsonLd.offers.lowPrice)
-        : 0;
+    const { price, variants } = extractOffersData(jsonLd.offers);
+    const jsonLdImage = extractImageUrl(jsonLd.image, pageUrl);
     return {
       productName: String(jsonLd.name),
-      priceJpy: Math.round(price),
-      brand: jsonLd.brand?.name || jsonLd.brand || '',
+      priceJpy: price,
+      brand: jsonLd.brand?.name || (typeof jsonLd.brand === 'string' ? jsonLd.brand : '') || '',
       description: String(jsonLd.description || '').slice(0, 200),
+      imageUrl: jsonLdImage || ogImage,
+      variants,
     };
   }
 
@@ -170,6 +231,8 @@ function extractProductFromHtml(html: string, _hostname: string): {
       priceJpy: finalPrice,
       brand: '',
       description: (ogDesc || '').slice(0, 200),
+      imageUrl: ogImage,
+      variants: [],
     };
   }
 
@@ -203,8 +266,11 @@ function extractUrlHints(url: string): string {
       platform = "Yahoo! ショッピング";
     } else if (host.includes("uniqlo.com")) {
       platform = "UNIQLO 日本";
-      const prodCode = pathParts.find(p => /^E\d+/.test(p) || /^\d{6,}/.test(p));
-      if (prodCode) hints += `商品碼: ${prodCode}\n`;
+      const prodSegment = pathParts.find(p => /^E\d+/.test(p) || /^\d{6,}/.test(p));
+      if (prodSegment) {
+        const numericCode = prodSegment.match(/E?(\d{6,})/)?.[1] || prodSegment;
+        hints += `商品番号: ${numericCode}\n`;
+      }
     } else if (host.includes("gu-global.com")) {
       platform = "GU 日本";
       const prodCode = pathParts.find(p => /^\d{6,}/.test(p));
@@ -245,9 +311,27 @@ function extractUrlHints(url: string): string {
   }
 }
 
+/** 從 URL 抽取商品番号（目前僅支援 UNIQLO） */
+function extractProductCode(url: string): string | undefined {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('uniqlo.com')) {
+      const pathParts = u.pathname.split('/').filter(Boolean);
+      const seg = pathParts.find(p => /^E\d+/.test(p) || /^\d{6,}/.test(p));
+      if (seg) return seg.match(/E?(\d{6,})/)?.[1] || undefined;
+    }
+  } catch { /* ignore */ }
+  return undefined;
+}
+
+/** 判斷是否為服飾類網站（需要完整尺寸才跳過 AI） */
+function isClothingSite(hostname: string): boolean {
+  return /uniqlo|gu-global|zozotown|abc-mart/.test(hostname);
+}
+
 /**
  * 從 URL 抽取商品資訊。
- * 新邏輯：先用 cheerio 抽取 → 抽到就直接用（跳過 AI） → 抽不到才交給 AI
+ * 新邏輯：先用 cheerio 抽取 → 抽到足夠資訊就直接用（跳過 AI） → 否則帶 hints 交給 AI
  */
 async function fetchUrlContent(url: string): Promise<{
   prompt: string;
@@ -256,9 +340,13 @@ async function fetchUrlContent(url: string): Promise<{
     priceJpy: number;
     brand: string;
     description: string;
+    imageUrl: string | null;
+    variants: Array<{ name: string; price_jpy: number }>;
+    productCode?: string;
   };
 }> {
   const urlHints = extractUrlHints(url);
+  const productCode = extractProductCode(url);
 
   // SSRF 防護
   if (!isAllowedUrl(url)) {
@@ -283,9 +371,44 @@ async function fetchUrlContent(url: string): Promise<{
     const hostname = new URL(url).hostname;
 
     // ✨ 嘗試直接從 HTML 抽取
-    const directResult = extractProductFromHtml(html, hostname);
-    if (directResult && directResult.productName && directResult.priceJpy > 0) {
-      return { prompt: '', directResult };
+    const extracted = extractProductFromHtml(html, url);
+
+    if (extracted && extracted.productName && extracted.priceJpy > 0) {
+      // 服飾類網站：需要有至少 2 個 variants 才跳過 AI（確保尺寸齊全）
+      const hasGoodVariants = extracted.variants.length >= 2 || !isClothingSite(hostname);
+
+      if (hasGoodVariants) {
+        return {
+          prompt: '',
+          directResult: { ...extracted, productCode },
+        };
+      }
+
+      // 服飾類但 variants 不夠 → 帶部分資訊送 AI 補齊尺寸
+      const variantInfo = extracted.variants.length > 0
+        ? `\n已抽取到 ${extracted.variants.length} 個規格，價格 ¥${extracted.priceJpy}。請列出該商品所有可選尺寸（XS/S/M/L/XL 等），每個尺寸的日幣價格填 ${extracted.priceJpy}。`
+        : `\n已抽取到商品名「${extracted.productName}」、價格 ¥${extracted.priceJpy}。請列出所有可選尺寸。`;
+
+      // 資料不夠 → 用 cheerio 取摘要給 AI
+      const $ = cheerio.load(html);
+      const ogTitle = $('meta[property="og:title"]').attr('content')?.trim() || $('title').text().trim();
+      const ogDesc = $('meta[property="og:description"]').attr('content')?.trim()
+        || $('meta[name="description"]').attr('content')?.trim();
+      $('script, style, nav, footer, header').remove();
+      const bodyText = $('body').text().replace(/\s+/g, ' ').trim().slice(0, 2000);
+
+      return {
+        prompt: `以下是商品網頁的內容，請從中辨識商品資訊：
+網頁標題: ${ogTitle}
+網頁描述: ${ogDesc || ''}
+頁面內容: ${bodyText}${variantInfo}`,
+        // 即使走 AI，也保留已抽到的圖片和品番
+        directResult: extracted.imageUrl || productCode ? {
+          ...extracted,
+          priceJpy: 0, // 讓 POST handler 不走直接路徑
+          productCode,
+        } : undefined,
+      };
     }
 
     // 資料不夠 → 用 cheerio 取摘要給 AI
@@ -302,16 +425,24 @@ async function fetchUrlContent(url: string): Promise<{
       return { prompt: buildUrlFallback(url, urlHints) };
     }
 
-    // 如果有部分資訊，一起告訴 AI
-    const partialHints = directResult
-      ? `\n已從網頁抽取到：商品名「${directResult.productName}」${directResult.brand ? `、品牌「${directResult.brand}」` : ''}，請補充完整。`
+    const partialHints = extracted
+      ? `\n已從網頁抽取到：商品名「${extracted.productName}」${extracted.brand ? `、品牌「${extracted.brand}」` : ''}，請補充完整。`
       : '';
 
     return {
       prompt: `以下是商品網頁的內容，請從中辨識商品資訊：
 網頁標題: ${ogTitle}
 網頁描述: ${ogDesc || ''}
-頁面內容: ${bodyText}${partialHints}`
+頁面內容: ${bodyText}${partialHints}`,
+      directResult: extracted?.imageUrl || productCode ? {
+        productName: extracted?.productName || '',
+        priceJpy: 0,
+        brand: extracted?.brand || '',
+        description: extracted?.description || '',
+        imageUrl: extracted?.imageUrl || null,
+        variants: [],
+        productCode,
+      } : undefined,
     };
   } catch {
     return { prompt: buildUrlFallback(url, urlHints) };
@@ -389,7 +520,9 @@ function buildPrompt(
 function normalizeAiResponse(
   raw: Record<string, unknown>,
   exchangeRate: number,
-  userUrl?: string
+  userUrl?: string,
+  extractedImageUrl?: string | null,
+  extractedProductCode?: string
 ): AiResponse {
   const variants = Array.isArray(raw.variants)
     ? raw.variants.map((v: any) => ({
@@ -432,6 +565,9 @@ function normalizeAiResponse(
     confidence,
     variants,
     selected_variant_index: selectedIndex,
+    // 優先用已從 HTML 抽取的圖片，其次用 AI 回傳的（通常 AI 不填）
+    product_image_url: extractedImageUrl || (raw.product_image_url ? String(raw.product_image_url) : undefined) || undefined,
+    product_code: extractedProductCode || (raw.product_code ? String(raw.product_code) : undefined) || undefined,
   };
 }
 
@@ -514,6 +650,16 @@ const responseSchema = {
       type: SchemaType.INTEGER,
       description: "預設選中的品項索引（從 0 開始，選最符合使用者描述的）",
     },
+    product_image_url: {
+      type: SchemaType.STRING,
+      description: "商品圖片 URL（選填，從網頁 og:image 或 JSON-LD 取得，AI 不須填寫）",
+      nullable: true,
+    },
+    product_code: {
+      type: SchemaType.STRING,
+      description: "商品番号（選填，如 UNIQLO 的 471809）",
+      nullable: true,
+    },
   },
   required: [
     "product_name_zh",
@@ -545,10 +691,11 @@ export async function POST(req: NextRequest) {
     // 偵測 URL 輸入 → server-side fetch 網頁內容
     let urlContent: string | undefined;
     let userUrl: string | undefined;
+    let urlData: Awaited<ReturnType<typeof fetchUrlContent>> | undefined;
 
     if (inputText && isUrl(inputText)) {
       userUrl = inputText.trim();
-      const urlData = await fetchUrlContent(userUrl);
+      urlData = await fetchUrlContent(userUrl);
       urlContent = urlData.prompt || undefined;
 
       // ✨ 如果從 HTML 直接抽到完整資訊 → 跳過 AI，秒回！
@@ -564,6 +711,11 @@ export async function POST(req: NextRequest) {
         } catch { /* 用預設 */ }
 
         const dr = urlData.directResult;
+        // variants：用抽到的，若無則以商品名為單一 variant
+        const variants = dr.variants.length > 0
+          ? dr.variants
+          : [{ name: dr.productName, price_jpy: dr.priceJpy }];
+
         const aiData: AiResponse = {
           product_name_zh: dr.productName,
           product_name_ja: dr.productName,
@@ -574,8 +726,10 @@ export async function POST(req: NextRequest) {
           buy_url: userUrl,
           description: dr.description || '',
           confidence: 'high',
-          variants: [{ name: dr.productName, price_jpy: dr.priceJpy }],
+          variants,
           selected_variant_index: 0,
+          product_image_url: dr.imageUrl || undefined,
+          product_code: dr.productCode,
         };
 
         return NextResponse.json({
@@ -641,7 +795,14 @@ export async function POST(req: NextRequest) {
     const raw = tryParseJson(responseText);
 
     if (raw) {
-      const aiData = normalizeAiResponse(raw, exchangeRate, userUrl);
+      // 若有走 AI 路徑但之前已抽到圖片/品番，一起帶進去
+      const aiData = normalizeAiResponse(
+        raw,
+        exchangeRate,
+        userUrl,
+        urlData?.directResult?.imageUrl,
+        urlData?.directResult?.productCode,
+      );
       return NextResponse.json({
         success: true,
         data: aiData,

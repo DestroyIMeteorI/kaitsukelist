@@ -113,9 +113,19 @@ export default function AiResultCard({
         </div>
       )}
 
-      {/* 用戶上傳圖片 + Google 圖片搜尋 */}
+      {/* 商品番号（UNIQLO 等） */}
+      {data.product_code && (
+        <div className="mb-2 flex items-center gap-1.5">
+          <span className="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-500">
+            品番 {data.product_code}
+          </span>
+        </div>
+      )}
+
+      {/* 圖片 + Google 圖片搜尋 */}
       <div className="mb-3 flex items-center gap-3">
-        {imageUrl && (
+        {/* 優先顯示使用者上傳的圖片，其次是從商品頁抽取的圖片 */}
+        {imageUrl ? (
           <Image
             src={imageUrl}
             alt="上傳的商品圖片"
@@ -123,7 +133,16 @@ export default function AiResultCard({
             height={112}
             className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
           />
-        )}
+        ) : data.product_image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={data.product_image_url}
+            alt="商品圖片"
+            referrerPolicy="no-referrer"
+            className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
+        ) : null}
         <a
           href={`https://www.google.com/search?q=${encodeURIComponent(searchName)}&tbm=isch`}
           target="_blank"
