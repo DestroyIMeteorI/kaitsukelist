@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, memo } from "react";
-import Image from "next/image";
 import type { Item, EditableItemFields } from "@/lib/types";
 import { STATUS_MAP, STATUS_COLORS } from "@/lib/types";
 
@@ -170,11 +169,11 @@ function ProductCard({
           {/* 圖片 + 資訊 */}
           <div className="flex gap-3">
             {item.input_image_url && (
-              <Image
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
                 src={item.input_image_url}
                 alt=""
-                width={80}
-                height={80}
+                referrerPolicy="no-referrer"
                 className="h-20 w-20 shrink-0 rounded-xl border border-gray-100 object-cover"
               />
             )}
