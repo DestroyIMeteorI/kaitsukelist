@@ -65,6 +65,64 @@ export async function setUserPin(userId: string, pinHash: string) {
   if (error) throw error;
 }
 
+// === 使用者管理（管理員用）===
+
+// 取得所有使用者 + 商品統計
+export async function getAllUsers() {
+  const { data: users, error: usersError } = await supabase
+    .from("users")
+    .select("id, name, role, created_at, pin_hash")
+    .order("created_at", { ascending: false });
+
+  if (usersError) throw usersError;
+  if (!users) return [];
+
+  const { data: items, error: itemsError } = await supabase
+    .from("items")
+    .select("user_id, status");
+
+  if (itemsError) throw itemsError;
+
+  return users.map((user) => {
+    const userItems = (items || []).filter((i) => i.user_id === user.id);
+    return {
+      ...user,
+      item_count: userItems.length,
+      pending_count: userItems.filter((i) => i.status === "pending").length,
+      bought_count: userItems.filter((i) => i.status === "bought").length,
+    };
+  });
+}
+
+// 重新命名使用者
+export async function renameUser(userId: string, newName: string) {
+  const trimmed = newName.trim();
+  if (!trimmed) throw new Error("名字不能是空的");
+  const { error } = await supabase
+    .from("users")
+    .update({ name: trimmed })
+    .eq("id", userId);
+  if (error) throw error;
+}
+
+// 重設使用者 PIN（清除 pin_hash，下次登入會要求重設）
+export async function resetUserPin(userId: string) {
+  const { error } = await supabase
+    .from("users")
+    .update({ pin_hash: null })
+    .eq("id", userId);
+  if (error) throw error;
+}
+
+// 刪除使用者（items 會因 ON DELETE CASCADE 自動刪除）
+export async function deleteUser(userId: string) {
+  const { error } = await supabase
+    .from("users")
+    .delete()
+    .eq("id", userId);
+  if (error) throw error;
+}
+
 // === 商品清單操作 ===
 
 // 取得某個使用者的所有商品

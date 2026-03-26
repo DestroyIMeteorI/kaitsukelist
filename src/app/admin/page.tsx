@@ -4,11 +4,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import Toast, { useToast } from "@/components/Toast";
-import type { Item, EditableItemFields } from "@/lib/types";
+import type { Item, EditableItemFields, UserWithStats } from "@/lib/types";
 import { STATUS_MAP } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 
 type SortKey = "newest" | "oldest" | "price_high" | "price_low" | "weight_heavy";
+type AdminTab = "items" | "users";
 
 const MAX_WEIGHT_G = 20000; // 行李重量警示門檻：20kg
 
@@ -25,6 +26,13 @@ export default function AdminPage() {
   const [sortBy, setSortBy] = useState<SortKey>("newest");
   const [error, setError] = useState("");
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
+  const [activeTab, setActiveTab] = useState<AdminTab>("items");
+  const [users, setUsers] = useState<UserWithStats[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
 
   useEffect(() => {
     localStorage.removeItem("adminPassword");
@@ -74,6 +82,58 @@ export default function AdminPage() {
       setLoading(false);
     }
   }
+
+  async function loadUsers() {
+    setUsersLoading(true);
+    try {
+      const { getAllUsers } = await import("@/lib/supabase");
+      setUsers(await getAllUsers());
+    } catch (err) {
+      console.error("載入使用者失敗:", err);
+      showToast("載入使用者失敗", "error");
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
+  async function handleRenameUser(userId: string) {
+    const trimmed = editingName.trim();
+    if (!trimmed) { showToast("名字不能是空的", "error"); return; }
+    try {
+      const { renameUser } = await import("@/lib/supabase");
+      await renameUser(userId, trimmed);
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, name: trimmed } : u));
+      setItems((prev) => prev.map((i) => i.user_id === userId ? { ...i, user_name: trimmed } : i));
+      setEditingUserId(null);
+      showToast("已更新名稱", "success");
+    } catch { showToast("更新名稱失敗，可能名字已被使用", "error"); }
+  }
+
+  async function handleResetPin(userId: string, userName: string) {
+    try {
+      const { resetUserPin } = await import("@/lib/supabase");
+      await resetUserPin(userId);
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, pin_hash: null } : u));
+      showToast(`已重設 ${userName} 的 PIN`, "success");
+    } catch { showToast("重設 PIN 失敗", "error"); }
+  }
+
+  async function handleDeleteUser(userId: string) {
+    try {
+      const { deleteUser } = await import("@/lib/supabase");
+      await deleteUser(userId);
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setItems((prev) => prev.filter((i) => i.user_id !== userId));
+      setConfirmDeleteUserId(null);
+      showToast("已刪除帳號及其所有商品", "info");
+    } catch { showToast("刪除帳號失敗", "error"); }
+  }
+
+  const filteredUsers = useMemo(() => {
+    if (!userSearchQuery.trim()) return users;
+    const q = userSearchQuery.trim().toLowerCase();
+    return users.filter((u) => u.name.toLowerCase().includes(q));
+  }, [users, userSearchQuery]);
 
   async function handleStatusChange(itemId: string, status: Item["status"]) {
     try {
@@ -202,7 +262,7 @@ export default function AdminPage() {
             </h1>
           </button>
           <div className="flex gap-2">
-            <button onClick={loadItems}
+            <button onClick={() => { if (activeTab === "users") loadUsers(); else loadItems(); }}
               className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:bg-gray-200">
               🔄 重新整理
             </button>
@@ -214,7 +274,176 @@ export default function AdminPage() {
         </div>
       </header>
 
+      {/* 分頁切換 */}
+      <div className="flex border-b border-gray-100 px-4">
+        <button
+          onClick={() => setActiveTab("items")}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors ${activeTab === "items" ? "border-b-2 border-sakura-500 text-sakura-600" : "text-gray-400 hover:text-gray-600"}`}
+        >
+          📦 商品管理
+        </button>
+        <button
+          onClick={() => { setActiveTab("users"); if (users.length === 0) loadUsers(); }}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors ${activeTab === "users" ? "border-b-2 border-sakura-500 text-sakura-600" : "text-gray-400 hover:text-gray-600"}`}
+        >
+          👤 帳號管理
+        </button>
+      </div>
+
       <main className="space-y-4 px-4 pt-4">
+        {activeTab === "users" && (
+          <>
+            {/* 帳號搜尋 */}
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+              <input
+                type="search"
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+                placeholder="搜尋帳號名稱..."
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm focus:border-sakura-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-sakura-200"
+              />
+            </div>
+
+            {/* 帳號統計 */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-gray-50 p-2.5 text-center">
+                <p className="text-xl font-bold text-gray-900">{users.length}</p>
+                <p className="text-xs text-gray-500">總帳號</p>
+              </div>
+              <div className="rounded-xl bg-emerald-50 p-2.5 text-center">
+                <p className="text-xl font-bold text-emerald-600">{users.filter((u) => u.pin_hash).length}</p>
+                <p className="text-xs text-gray-500">已設 PIN</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 p-2.5 text-center">
+                <p className="text-xl font-bold text-amber-600">{users.filter((u) => !u.pin_hash).length}</p>
+                <p className="text-xs text-gray-500">未設 PIN</p>
+              </div>
+            </div>
+
+            {/* 帳號列表 */}
+            {usersLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => <div key={i} className="shimmer h-24 rounded-2xl" />)}
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 py-12 text-center">
+                <p className="text-3xl">{userSearchQuery ? "🔍" : "👤"}</p>
+                <p className="mt-2 text-sm text-gray-400">
+                  {users.length === 0 ? "還沒有任何帳號" : `找不到符合「${userSearchQuery}」的帳號`}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredUsers.map((user) => (
+                  <div key={user.id} className="card-hover rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      {/* 左側：名稱 + 資訊 */}
+                      <div className="min-w-0 flex-1">
+                        {editingUserId === user.id ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              className="min-w-0 flex-1 rounded-lg border border-sakura-200 px-3 py-1.5 text-sm focus:border-sakura-400 focus:outline-none focus:ring-1 focus:ring-sakura-200"
+                              autoFocus
+                              onKeyDown={(e) => { if (e.key === "Enter") handleRenameUser(user.id); if (e.key === "Escape") setEditingUserId(null); }}
+                            />
+                            <button onClick={() => handleRenameUser(user.id)}
+                              className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-sakura-600">
+                              儲存
+                            </button>
+                            <button onClick={() => setEditingUserId(null)}
+                              className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200">
+                              取消
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-semibold text-gray-900">{user.name}</h3>
+                            {user.pin_hash ? (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-600">PIN 已設定</span>
+                            ) : (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-600">未設 PIN</span>
+                            )}
+                          </div>
+                        )}
+                        <p className="mt-1 text-xs text-gray-400">
+                          建立於 {new Date(user.created_at).toLocaleDateString("zh-TW")}
+                        </p>
+                        {/* 商品統計 */}
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600">
+                            {user.item_count} 件商品
+                          </span>
+                          {user.pending_count > 0 && (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-600">
+                              {user.pending_count} 待處理
+                            </span>
+                          )}
+                          {user.bought_count > 0 && (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-600">
+                              {user.bought_count} 已買到
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 右側：操作按鈕 */}
+                      {editingUserId !== user.id && (
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            onClick={() => { setEditingUserId(user.id); setEditingName(user.name); }}
+                            className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:bg-gray-200"
+                            title="重新命名"
+                          >
+                            ✏️ 改名
+                          </button>
+                          {user.pin_hash && (
+                            <button
+                              onClick={() => handleResetPin(user.id, user.name)}
+                              className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-600 transition-colors hover:bg-amber-100"
+                              title="清除 PIN，下次登入需重新設定"
+                            >
+                              🔓 重設 PIN
+                            </button>
+                          )}
+                          {confirmDeleteUserId === user.id ? (
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="rounded-lg bg-red-500 px-2 py-1.5 text-xs font-medium text-white hover:bg-red-600"
+                              >
+                                確認刪除
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteUserId(null)}
+                                className="rounded-lg bg-gray-100 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-200"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDeleteUserId(user.id)}
+                              className="rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-500 transition-colors hover:bg-red-100"
+                              title="刪除帳號及其所有商品"
+                            >
+                              🗑️ 刪除
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === "items" && (<>
         {/* 統計卡片 */}
         <div className="grid grid-cols-4 gap-2">
           <div className="rounded-xl bg-gray-50 p-2.5 text-center">
@@ -337,6 +566,7 @@ export default function AdminPage() {
             ))}
           </div>
         )}
+        </>)}
       </main>
     </div>
   );

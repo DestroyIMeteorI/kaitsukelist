@@ -64,6 +64,18 @@ export interface EditableItemFields {
   note?: string | null;
 }
 
+// 使用者 + 統計資訊（管理員用）
+export interface UserWithStats {
+  id: string;
+  name: string;
+  role: "admin" | "user";
+  created_at: string;
+  pin_hash: string | null;
+  item_count: number;
+  pending_count: number;
+  bought_count: number;
+}
+
 // 狀態的中文對照
 export const STATUS_MAP: Record<Item["status"], string> = {
   pending: "待處理",
