@@ -402,6 +402,7 @@ export default function ListPage() {
                 <ProductCard
                   key={item.id}
                   item={item}
+                  userId={user?.id}
                   onDelete={isOnline ? handleDelete : undefined}
                   onEdit={isOnline ? handleItemEdit : undefined}
                 />

@@ -66,6 +66,7 @@ export interface EditableItemFields {
   ai_brand?: string;
   ai_price_jpy?: number;
   ai_price_twd?: number;
+  input_image_url?: string | null;
   ai_where_to_buy?: string[];
   ai_product_url?: string;
   quantity?: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo } from "react";
+import { useState, useRef, memo } from "react";
 import Image from "next/image";
 import type { Item, EditableItemFields } from "@/lib/types";
 import { STATUS_MAP, STATUS_COLORS } from "@/lib/types";
@@ -12,6 +12,7 @@ interface PurchaseDetails {
 
 interface ProductCardProps {
   item: Item;
+  userId?: string;
   showUser?: boolean;
   onDelete?: (id: string) => void;
   onStatusChange?: (id: string, status: Item["status"], purchaseDetails?: PurchaseDetails) => void;
@@ -20,6 +21,7 @@ interface ProductCardProps {
 
 function ProductCard({
   item,
+  userId,
   showUser,
   onDelete,
   onStatusChange,
@@ -30,6 +32,9 @@ function ProductCard({
   const [showBoughtForm, setShowBoughtForm] = useState(false);
   const [actualPriceJpy, setActualPriceJpy] = useState(String(item.ai_price_jpy || ""));
   const [actualQuantity, setActualQuantity] = useState(String(item.quantity || 1));
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   // 編輯表單的本地狀態
   const [editName, setEditName] = useState(item.ai_product_name || "");
@@ -47,8 +52,22 @@ function ProductCard({
     ? Math.round(Number(editPriceJpy) * Number(item.ai_exchange_rate))
     : item.ai_price_twd;
 
+  async function handleEditImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      const imageCompression = (await import("browser-image-compression")).default;
+      const compressed = await imageCompression(file, {
+        maxWidthOrHeight: 800, maxSizeMB: 0.3, useWebWorker: true,
+      });
+      setEditImageFile(compressed);
+      const reader = new FileReader();
+      reader.onloadend = () => setEditImagePreview(reader.result as string);
+      reader.readAsDataURL(compressed);
+    } catch { /* ignore */ }
+  }
+
   function handleEditOpen() {
-    // 重置為目前值再開啟
     setEditName(item.ai_product_name || "");
     setEditNameJa(item.ai_product_name_ja || "");
     setEditBrand(item.ai_brand || "");
@@ -58,6 +77,8 @@ function ProductCard({
     setEditQuantity(String(item.quantity || 1));
     setEditWeight(String(item.weight_g || ""));
     setEditNote(item.note || "");
+    setEditImagePreview(null);
+    setEditImageFile(null);
     setIsEditing(true);
   }
 
@@ -68,6 +89,13 @@ function ProductCard({
       .split(/[、,，]/)
       .map((s) => s.trim())
       .filter(Boolean);
+
+    // 上傳新圖片（如有）
+    let newImageUrl: string | undefined;
+    if (editImageFile && userId) {
+      const { uploadImage } = await import("@/lib/supabase");
+      newImageUrl = await uploadImage(editImageFile, userId);
+    }
 
     await onEdit(item.id, {
       ai_product_name: editName.trim() || undefined,
@@ -82,6 +110,7 @@ function ProductCard({
       quantity: Number(editQuantity) || 1,
       weight_g: editWeight ? Number(editWeight) : null,
       note: editNote.trim() || null,
+      ...(newImageUrl ? { input_image_url: newImageUrl } : {}),
     });
     setIsEditing(false);
   }
@@ -373,6 +402,29 @@ function ProductCard({
               <input type="url" value={editUrl} onChange={(e) => setEditUrl(e.target.value)}
                 placeholder="https://..."
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-sakura-300 focus:outline-none focus:ring-1 focus:ring-sakura-200" />
+            </div>
+            <div>
+              <label className="mb-0.5 block text-xs text-gray-500">商品圖片</label>
+              <div className="flex items-center gap-2">
+                {(editImagePreview || item.input_image_url) && (
+                  <img
+                    src={editImagePreview || item.input_image_url || ""}
+                    alt=""
+                    className="h-16 w-16 rounded-lg border border-gray-200 object-cover"
+                  />
+                )}
+                <label className="cursor-pointer rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-500 transition-colors hover:border-sakura-300 hover:bg-sakura-50">
+                  📷 {item.input_image_url || editImagePreview ? "更換圖片" : "新增圖片"}
+                  <input
+                    ref={editFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleEditImageSelect}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
             <div>
               <label className="mb-0.5 block text-xs text-gray-500">備註</label>
