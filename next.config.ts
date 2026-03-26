@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "*.supabase.co" },
       { protocol: "https", hostname: "*.supabase.in" },
+      { protocol: "https", hostname: "image.uniqlo.com" },
     ],
     // 現代圖片格式優先順序
     formats: ["image/avif", "image/webp"],
