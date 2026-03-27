@@ -370,7 +370,7 @@ export default function ListPage() {
             </h1>
             {exchangeRate && (
               <p className="text-xs text-gray-400">
-                匯率 ¥1 ≈ NT${exchangeRate.rate} ・
+                匯率 ¥1 ≈ NT${exchangeRate.rate.toFixed(4)} ・
                 更新 {new Date(exchangeRate.updated_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}
               </p>
             )}

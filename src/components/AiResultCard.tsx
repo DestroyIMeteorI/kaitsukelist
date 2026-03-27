@@ -244,7 +244,7 @@ export default function AiResultCard({
           </div>
         </div>
         <p className="mt-1.5 text-xs text-gray-400">
-          匯率：¥1 ≈ NT${exchangeRate}
+          匯率：¥1 ≈ NT${exchangeRate.toFixed(4)}
         </p>
       </div>
 

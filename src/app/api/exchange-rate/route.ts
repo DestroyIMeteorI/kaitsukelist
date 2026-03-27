@@ -9,14 +9,15 @@ export const revalidate = 3600;
 
 export async function GET() {
   try {
-    const res = await fetch(
-      "https://api.exchangerate-api.com/v4/latest/JPY",
-      // next: { revalidate } 讓 Next.js 在 fetch 層快取外部 API 回應
-      { next: { revalidate: 3600 } }
-    );
+    const apiKey = process.env.EXCHANGE_RATE_API_KEY;
+    const url = apiKey
+      ? `https://v6.exchangerate-api.com/v6/${apiKey}/latest/JPY`
+      : "https://api.exchangerate-api.com/v4/latest/JPY";
+
+    const res = await fetch(url, { next: { revalidate: 3600 } });
     const data = await res.json();
 
-    const rate = data.rates?.TWD;
+    const rate = apiKey ? data.conversion_rates?.TWD : data.rates?.TWD;
     if (!rate) throw new Error("找不到 TWD 匯率");
 
     const result = {
