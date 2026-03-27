@@ -50,6 +50,7 @@ const ALLOWED_HOSTS = [
   // --- 食品 / 土產 ---
   "royce.com", "www.royce.com",
   "ishiya-shop.jp", "www.ishiya-shop.jp",
+  "ishiya.co.jp",                          // 石屋製菓官網 shop.ishiya.co.jp
   "calbee.co.jp", "www.calbee.co.jp",
 
   // --- 便利商店 / 超市 ---
@@ -556,46 +557,55 @@ async function fetchUrlContent(url: string): Promise<{
   const urlHints = extractUrlHints(url);
   const productCode = extractProductCode(url);
 
-  // SSRF 防護
-  if (!isAllowedUrl(url)) {
-    return { prompt: buildUrlFallback(url, urlHints) };
-  }
-
   // UNIQLO 是 SPA，HTML scraping 無法拿到真實資料，改走官方 API
   if (new URL(url).hostname.includes('uniqlo.com')) {
     const uniqloData = await fetchUniqloProduct(url);
     if (uniqloData && uniqloData.productName && uniqloData.priceJpy > 0) {
       return { prompt: '', directResult: uniqloData };
     }
-    // API 失敗時 fallback 到一般流程（可能拿到部分資料）
+    // API 失敗時 fallback 到一般流程
   }
 
-  // ── Jina.ai Reader：JS 渲染後的乾淨 Markdown，對動態電商更準確 ──
-  const jinaMarkdown = await fetchViaJina(url);
-  if (jinaMarkdown) {
-    // 嘗試從 Jina Markdown 抽取第一張商品圖片 URL
-    const imgMatch = jinaMarkdown.match(
-      /!\[[^\]]*\]\((https:\/\/[^)\s]+\.(?:jpg|jpeg|png|webp|gif)[^)]*)\)/i
-    );
-    const imageFromJina = imgMatch?.[1] ?? null;
+  // ── Jina.ai Reader：JS 渲染後的乾淨 Markdown ──────────────────────
+  // Jina 由其伺服器去抓目標頁面，非我們直接 fetch，SSRF 風險在 Jina 端。
+  // 只需確認是公開 https URL（非內網/localhost），即可放行所有電商。
+  const parsedUrl = new URL(url);
+  const isPublicHttps =
+    parsedUrl.protocol === 'https:' &&
+    parsedUrl.hostname !== 'localhost' &&
+    !/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(parsedUrl.hostname);
 
-    return {
-      prompt: `以下是商品網頁執行 JavaScript 後的 Markdown 內容（來源：${new URL(url).hostname}）。
+  if (isPublicHttps) {
+    const jinaMarkdown = await fetchViaJina(url);
+    if (jinaMarkdown) {
+      // 嘗試從 Jina Markdown 抽取第一張商品圖片 URL
+      const imgMatch = jinaMarkdown.match(
+        /!\[[^\]]*\]\((https:\/\/[^)\s]+\.(?:jpg|jpeg|png|webp|gif)[^)]*)\)/i
+      );
+      const imageFromJina = imgMatch?.[1] ?? null;
+
+      return {
+        prompt: `以下是商品網頁執行 JavaScript 後的 Markdown 內容（來源：${new URL(url).hostname}）。
 請從中精確辨識商品資訊，包含商品名稱、所有可選規格及各規格的日幣售價：
 
 ${jinaMarkdown}`,
-      directResult: (imageFromJina || productCode) ? {
-        productName: '',
-        priceJpy: 0,
-        brand: '',
-        description: '',
-        imageUrl: imageFromJina,
-        variants: [],
-        productCode,
-      } : undefined,
-    };
+        directResult: (imageFromJina || productCode) ? {
+          productName: '',
+          priceJpy: 0,
+          brand: '',
+          description: '',
+          imageUrl: imageFromJina,
+          variants: [],
+          productCode,
+        } : undefined,
+      };
+    }
   }
-  // Jina 失敗 → fallback 到靜態 HTML Cheerio 爬蟲 ──────────────────
+
+  // Jina 失敗 → fallback 到靜態 HTML Cheerio 爬蟲（僅限白名單域名）
+  if (!isAllowedUrl(url)) {
+    return { prompt: buildUrlFallback(url, urlHints) };
+  }
 
   try {
     const res = await fetch(url, {
