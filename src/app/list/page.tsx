@@ -129,8 +129,9 @@ export default function ListPage() {
   );
 
   /** SubmitForm 確認卡片直接確認（quantity=1，不展開完整表單） */
-  async function handleQuickConfirm(data: AiResponse, rate: number, note: string, imageUrl?: string) {
+  async function handleQuickConfirm(data: AiResponse, rate: number, note: string, imageUrl?: string, inputText?: string) {
     if (!user) return;
+    const isUrlInput = /^https?:\/\//i.test((inputText || "").trim());
     try {
       const { addItem } = await import("@/lib/supabase");
       const newItem = await addItem({
@@ -143,7 +144,7 @@ export default function ListPage() {
         ai_price_twd: data.estimated_price_twd,
         ai_exchange_rate: rate,
         ai_where_to_buy: data.where_to_buy,
-        ai_product_url: data.buy_url,
+        ai_product_url: isUrlInput ? data.buy_url : null,
         ai_description: data.description,
         ai_confidence: data.confidence,
         ai_summary: JSON.stringify(data),
@@ -165,6 +166,7 @@ export default function ListPage() {
 
   async function handleConfirmAdd(data: AiResponse, quantity: number, weight?: number) {
     if (!user || !pendingResult) return;
+    const isUrlInput = /^https?:\/\//i.test((pendingResult.inputText || "").trim());
     try {
       const { addItem } = await import("@/lib/supabase");
       const newItem = await addItem({
@@ -179,7 +181,7 @@ export default function ListPage() {
         ai_price_twd: data.estimated_price_twd,
         ai_exchange_rate: pendingResult.exchangeRate,
         ai_where_to_buy: data.where_to_buy,
-        ai_product_url: data.buy_url,
+        ai_product_url: isUrlInput ? data.buy_url : null,
         ai_description: data.description,
         ai_confidence: data.confidence,
         ai_summary: JSON.stringify(data),

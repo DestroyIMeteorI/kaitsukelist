@@ -273,7 +273,8 @@ export default function AiResultCard({
           🔍 在以下平台搜尋此商品
         </p>
         <div className="flex flex-wrap gap-1.5">
-          {data.buy_url && (
+          {/* 只有使用者本來就輸入網址時才顯示，防止 AI 幻覺假連結 */}
+          {data.buy_url && inputText && /^https?:\/\//i.test(inputText.trim()) && (
             <a
               href={data.buy_url}
               target="_blank"

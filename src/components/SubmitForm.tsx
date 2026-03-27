@@ -7,7 +7,7 @@ interface SubmitFormProps {
   /** AI 辨識完成後，使用者點「修改細節」才觸發 → 父層顯示完整 AiResultCard */
   onResult: (data: AiResponse, exchangeRate: number, inputText?: string, imageUrl?: string) => void;
   /** 使用者在確認卡片直接點「確認加入清單」→ 父層直接存入 DB */
-  onQuickConfirm: (data: AiResponse, exchangeRate: number, note: string, imageUrl?: string) => void;
+  onQuickConfirm: (data: AiResponse, exchangeRate: number, note: string, imageUrl?: string, inputText?: string) => void;
   userId: string;
   disabled?: boolean;
 }
@@ -244,7 +244,7 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
         (aiResult.variants[selectedVariant]?.price_jpy ?? aiResult.estimated_price_jpy) * aiRate
       ),
     };
-    onQuickConfirm(finalData, aiRate, buildNote(noteText, followUpAnswers), aiImageUrl);
+    onQuickConfirm(finalData, aiRate, buildNote(noteText, followUpAnswers), aiImageUrl, aiInputText);
     handleBack();
   }
 
