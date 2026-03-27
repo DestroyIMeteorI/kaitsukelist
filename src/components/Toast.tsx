@@ -26,12 +26,13 @@ function ToastMessage({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: 
   const style = TYPE_STYLES[toast.type];
 
   useEffect(() => {
+    const duration = toast.type === "error" ? 5000 : 3000;
     const timer = setTimeout(() => {
       setLeaving(true);
       setTimeout(() => onDismiss(toast.id), 260);
-    }, 3000);
+    }, duration);
     return () => clearTimeout(timer);
-  }, [toast.id, onDismiss]);
+  }, [toast.id, toast.type, onDismiss]);
 
   return (
     <div

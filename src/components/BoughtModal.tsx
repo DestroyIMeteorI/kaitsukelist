@@ -12,6 +12,7 @@ interface BoughtModalProps {
 export default function BoughtModal({ item, onConfirm, onClose }: BoughtModalProps) {
   const [actualPrice, setActualPrice] = useState(String(item.ai_price_jpy || ""));
   const [actualQty, setActualQty] = useState(String(item.quantity || 1));
+  const [priceError, setPriceError] = useState(false);
 
   // 按 ESC 關閉
   useEffect(() => {
@@ -23,13 +24,19 @@ export default function BoughtModal({ item, onConfirm, onClose }: BoughtModalPro
   }, [onClose]);
 
   function handleConfirm() {
+    const price = Number(actualPrice);
+    if (!price || price <= 0) {
+      setPriceError(true);
+      return;
+    }
     onConfirm({
-      actual_price_jpy: Number(actualPrice) || 0,
+      actual_price_jpy: Math.round(price),
       actual_quantity: Number(actualQty) || 1,
     });
   }
 
-  const twd = actualPrice ? Math.round(Number(actualPrice) * 0.2012) : 0;
+  const rate = item.ai_exchange_rate ? Number(item.ai_exchange_rate) : 0.2012;
+  const twd = actualPrice ? Math.round(Number(actualPrice) * rate) : 0;
 
   return (
     /* 背景遮罩 */
@@ -64,12 +71,15 @@ export default function BoughtModal({ item, onConfirm, onClose }: BoughtModalPro
             type="number"
             inputMode="numeric"
             value={actualPrice}
-            onChange={(e) => setActualPrice(e.target.value)}
+            onChange={(e) => { setActualPrice(e.target.value); setPriceError(false); }}
             placeholder="輸入實際購買金額"
             className="flex-1 rounded-xl border-2 border-sakura-300 py-3 text-center text-2xl font-bold focus:border-sakura-500 focus:outline-none"
             autoFocus
           />
         </div>
+        {priceError && (
+          <p className="mb-1 text-xs text-red-500">⚠️ 請輸入實際購買金額</p>
+        )}
         {twd > 0 && (
           <p className="mb-4 text-right text-xs text-gray-400">≈ NT${twd.toLocaleString()}</p>
         )}
@@ -87,7 +97,7 @@ export default function BoughtModal({ item, onConfirm, onClose }: BoughtModalPro
           <span className="w-8 text-center text-2xl font-bold">{actualQty}</span>
           <button
             aria-label="增加數量"
-            onClick={() => setActualQty(String(Number(actualQty) + 1))}
+            onClick={() => setActualQty(String(Math.min(99, Number(actualQty) + 1)))}
             className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-xl active:scale-95 transition-transform"
           >
             +

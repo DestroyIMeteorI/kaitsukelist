@@ -374,7 +374,7 @@ export default function AiResultCard({
           </span>
           <button
             aria-label="增加數量"
-            onClick={() => setQuantity(quantity + 1)}
+            onClick={() => setQuantity(Math.min(99, quantity + 1))}
             className="min-h-[44px] min-w-[44px] text-lg text-gray-500 transition-colors hover:text-gray-800 active:scale-[0.95]"
           >
             +

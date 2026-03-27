@@ -342,7 +342,7 @@ export default function AdminPage() {
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                {fieldMode ? "🏪 現場模式" : "🏪 現場模式"}
+                {fieldMode ? "📦 回一般模式" : "🏪 現場模式"}
               </button>
             )}
             <button onClick={() => { if (activeTab === "users") loadUsers(); else loadItems(); }}
@@ -671,7 +671,19 @@ export default function AdminPage() {
                   </span>
                 </div>
 
-                {/* 第二行：備註（醒目顯示） */}
+                {/* 第二行：商品圖片（幫助在店裡辨識商品） */}
+                {item.input_image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={item.input_image_url}
+                    alt=""
+                    width={72}
+                    height={72}
+                    className="mb-2 h-18 w-18 rounded-xl border border-gray-200 object-cover"
+                  />
+                )}
+
+                {/* 第三行：備註（醒目顯示） */}
                 {item.note && (
                   <div className="mb-3 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2">
                     <p className="text-sm text-yellow-800">📝 {item.note}</p>

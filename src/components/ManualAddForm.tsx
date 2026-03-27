@@ -153,7 +153,7 @@ export default function ManualAddForm({
             </button>
             <span className="flex-1 text-center text-sm font-semibold">{quantity}</span>
             <button
-              onClick={() => setQuantity(quantity + 1)}
+              onClick={() => setQuantity(Math.min(99, quantity + 1))}
               className="flex h-full w-11 items-center justify-center text-lg text-gray-500 transition-colors hover:text-gray-800 disabled:opacity-40"
               disabled={isDisabled}
             >

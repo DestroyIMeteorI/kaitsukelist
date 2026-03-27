@@ -182,7 +182,6 @@ export async function updateItemStatus(
     .from("items")
     .update({
       status,
-      note: extra?.note || null,
       actual_price_jpy: extra?.actual_price_jpy ?? null,
       actual_quantity: extra?.actual_quantity ?? null,
       updated_at: new Date().toISOString(),

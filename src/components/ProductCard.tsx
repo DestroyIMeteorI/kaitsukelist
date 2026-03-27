@@ -34,6 +34,8 @@ function ProductCard({
   const [actualPriceJpy, setActualPriceJpy] = useState(String(item.ai_price_jpy || ""));
   const [actualQuantity, setActualQuantity] = useState(String(item.quantity || 1));
   const [aiFilling, setAiFilling] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -86,35 +88,43 @@ function ProductCard({
 
   async function handleSave() {
     if (!onEdit) return;
-    const priceJpy = Number(editPriceJpy) || 0;
-    const whereToBuy = editWhere
-      .split(/[、,，]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    setSaving(true);
+    setSaveError("");
+    try {
+      const priceJpy = Number(editPriceJpy) || 0;
+      const whereToBuy = editWhere
+        .split(/[、,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
 
-    // 上傳新圖片（如有）
-    let newImageUrl: string | undefined;
-    if (editImageFile && userId) {
-      const { uploadImage } = await import("@/lib/supabase");
-      newImageUrl = await uploadImage(editImageFile, userId);
+      // 上傳新圖片（如有）
+      let newImageUrl: string | undefined;
+      if (editImageFile && userId) {
+        const { uploadImage } = await import("@/lib/supabase");
+        newImageUrl = await uploadImage(editImageFile, userId);
+      }
+
+      await onEdit(item.id, {
+        ai_product_name: editName.trim() || undefined,
+        ai_product_name_ja: editNameJa.trim() || undefined,
+        ai_brand: editBrand.trim() || undefined,
+        ai_price_jpy: priceJpy || undefined,
+        ai_price_twd: (priceJpy && item.ai_exchange_rate)
+          ? Math.round(priceJpy * Number(item.ai_exchange_rate))
+          : undefined,
+        ai_where_to_buy: whereToBuy.length ? whereToBuy : undefined,
+        ai_product_url: editUrl.trim() || undefined,
+        quantity: Number(editQuantity) || 1,
+        weight_g: editWeight ? Number(editWeight) : null,
+        note: editNote.trim() || null,
+        ...(newImageUrl ? { input_image_url: newImageUrl } : {}),
+      });
+      setIsEditing(false);
+    } catch {
+      setSaveError("儲存失敗，請重試");
+    } finally {
+      setSaving(false);
     }
-
-    await onEdit(item.id, {
-      ai_product_name: editName.trim() || undefined,
-      ai_product_name_ja: editNameJa.trim() || undefined,
-      ai_brand: editBrand.trim() || undefined,
-      ai_price_jpy: priceJpy || undefined,
-      ai_price_twd: (priceJpy && item.ai_exchange_rate)
-        ? Math.round(priceJpy * Number(item.ai_exchange_rate))
-        : undefined,
-      ai_where_to_buy: whereToBuy.length ? whereToBuy : undefined,
-      ai_product_url: editUrl.trim() || undefined,
-      quantity: Number(editQuantity) || 1,
-      weight_g: editWeight ? Number(editWeight) : null,
-      note: editNote.trim() || null,
-      ...(newImageUrl ? { input_image_url: newImageUrl } : {}),
-    });
-    setIsEditing(false);
   }
 
   return (
@@ -289,13 +299,16 @@ function ProductCard({
                   取消
                 </button>
                 <button onClick={() => {
+                  const price = Math.round(Number(actualPriceJpy));
+                  if (!price || price <= 0) return;
                   onStatusChange(item.id, "bought", {
-                    actual_price_jpy: Math.round(Number(actualPriceJpy)) || 0,
+                    actual_price_jpy: price,
                     actual_quantity: Number(actualQuantity) || 1,
                   });
                   setShowBoughtForm(false);
                 }}
-                  className="min-h-[36px] flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+                  disabled={!actualPriceJpy || Number(actualPriceJpy) <= 0}
+                  className="min-h-[36px] flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40">
                   ✓ 確認已買
                 </button>
               </div>
@@ -452,14 +465,19 @@ function ProductCard({
             </div>
           </div>
 
+          {saveError && (
+            <p className="rounded-lg bg-red-50 px-3 py-1.5 text-xs text-red-600">⚠️ {saveError}</p>
+          )}
           <div className="flex gap-2 pt-1">
-            <button onClick={() => setIsEditing(false)}
-              className="min-h-[44px] flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 transition-all hover:bg-gray-50 active:scale-[0.98]">
+            <button onClick={() => { setIsEditing(false); setSaveError(""); }}
+              disabled={saving}
+              className="min-h-[44px] flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 transition-all hover:bg-gray-50 active:scale-[0.98] disabled:opacity-50">
               取消
             </button>
             <button onClick={handleSave}
-              className="min-h-[44px] flex-1 rounded-xl bg-sakura-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-sakura-600 active:scale-[0.98]">
-              儲存
+              disabled={saving}
+              className="min-h-[44px] flex-1 rounded-xl bg-sakura-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-sakura-600 active:scale-[0.98] disabled:opacity-50">
+              {saving ? "儲存中..." : "儲存"}
             </button>
           </div>
         </div>

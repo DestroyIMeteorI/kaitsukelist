@@ -27,6 +27,9 @@ export default function ListPage() {
   const [addMode, setAddMode] = useState<AddMode>("ai");
   const { toasts, show: showToast, dismiss: dismissToast } = useToast();
 
+  const [refreshing, setRefreshing] = useState(false);
+  const [rateFallback, setRateFallback] = useState(false);
+
   const [pendingResult, setPendingResult] = useState<{
     data: AiResponse;
     exchangeRate: number;
@@ -92,6 +95,7 @@ export default function ListPage() {
       .then(setExchangeRate)
       .catch(() => {
         setExchangeRate({ rate: 0.22, updated_at: new Date().toISOString() });
+        setRateFallback(true);
       });
   }, []);
 
@@ -337,6 +341,23 @@ export default function ListPage() {
     }
   }
 
+  async function handleRefresh() {
+    if (!user || refreshing) return;
+    setRefreshing(true);
+    try {
+      const { getUserItems } = await import("@/lib/supabase");
+      const freshItems = await getUserItems(user.id) || [];
+      setItems(freshItems);
+      const name = localStorage.getItem("userName") || "";
+      localStorage.setItem(`${CACHE_KEY_PREFIX}${name}`, JSON.stringify({ user, items: freshItems }));
+      showToast("清單已更新", "success");
+    } catch {
+      showToast("重新整理失敗，請稍後再試", "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   function handleLogout() {
     localStorage.removeItem("userName");
     router.push("/");
@@ -370,17 +391,38 @@ export default function ListPage() {
             </h1>
             {exchangeRate && (
               <p className="text-xs text-gray-400">
-                匯率 ¥1 ≈ NT${exchangeRate.rate.toFixed(4)} ・
-                更新 {new Date(exchangeRate.updated_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}
+                匯率 ¥1 ≈ NT${exchangeRate.rate.toFixed(4)}
+                {rateFallback ? (
+                  <span className="ml-1 text-amber-500">⚠️ 預設值</span>
+                ) : (
+                  <> ・ 更新 {new Date(exchangeRate.updated_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}</>
+                )}
               </p>
             )}
           </div>
-          <button onClick={handleLogout}
-            className="shrink-0 rounded-lg px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
-            切換身份
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="rounded-lg px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+              aria-label="重新整理"
+            >
+              {refreshing ? "⏳" : "🔄"}
+            </button>
+            <button onClick={handleLogout}
+              className="rounded-lg px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+              切換身份
+            </button>
+          </div>
         </div>
       </header>
+
+      {/* 有快取但正在更新時的細 loading bar */}
+      {loading && items.length > 0 && (
+        <div className="h-0.5 w-full overflow-hidden bg-sakura-100">
+          <div className="h-full w-1/2 animate-pulse rounded-full bg-sakura-400" />
+        </div>
+      )}
 
       <main className="space-y-4 px-4 pt-4">
         {/* ListStats 統計卡片 */}
