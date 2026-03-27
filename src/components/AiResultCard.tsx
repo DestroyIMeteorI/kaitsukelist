@@ -138,6 +138,8 @@ export default function AiResultCard({
           <img
             src={data.product_image_url}
             alt="商品圖片"
+            width={112}
+            height={112}
             referrerPolicy="no-referrer"
             className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
@@ -151,6 +153,7 @@ export default function AiResultCard({
         >
           📷 查看商品圖片
           <svg
+            aria-hidden="true"
             className="h-3 w-3"
             fill="none"
             viewBox="0 0 24 24"
@@ -360,6 +363,7 @@ export default function AiResultCard({
         <span className="text-sm text-gray-600">數量：</span>
         <div className="flex items-center rounded-xl border border-gray-200">
           <button
+            aria-label="減少數量"
             onClick={() => setQuantity(Math.max(1, quantity - 1))}
             className="min-h-[44px] min-w-[44px] text-lg text-gray-500 transition-colors hover:text-gray-800 active:scale-[0.95]"
           >
@@ -369,6 +373,7 @@ export default function AiResultCard({
             {quantity}
           </span>
           <button
+            aria-label="增加數量"
             onClick={() => setQuantity(quantity + 1)}
             className="min-h-[44px] min-w-[44px] text-lg text-gray-500 transition-colors hover:text-gray-800 active:scale-[0.95]"
           >
@@ -410,7 +415,7 @@ export default function AiResultCard({
           disabled={submitting}
           className="min-h-[48px] flex-1 rounded-xl bg-sakura-500 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-sakura-600 active:scale-[0.98] disabled:opacity-50"
         >
-          {submitting ? "加入中..." : "✓ 加入清單"}
+          {submitting ? "加入中…" : "✓ 加入清單"}
         </button>
       </div>
     </div>

@@ -173,6 +173,8 @@ function ProductCard({
               <img
                 src={item.input_image_url}
                 alt=""
+                width={80}
+                height={80}
                 referrerPolicy="no-referrer"
                 className="h-20 w-20 shrink-0 rounded-xl border border-gray-100 object-cover"
               />
@@ -424,6 +426,8 @@ function ProductCard({
                   <img
                     src={editImagePreview || item.input_image_url || ""}
                     alt=""
+                    width={64}
+                    height={64}
                     className="h-16 w-16 rounded-lg border border-gray-200 object-cover"
                   />
                 )}
@@ -433,7 +437,6 @@ function ProductCard({
                     ref={editFileInputRef}
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     onChange={handleEditImageSelect}
                     className="hidden"
                   />

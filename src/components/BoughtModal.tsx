@@ -78,6 +78,7 @@ export default function BoughtModal({ item, onConfirm, onClose }: BoughtModalPro
         <label className="mb-1 block text-sm text-gray-500">數量</label>
         <div className="mb-6 flex items-center gap-4">
           <button
+            aria-label="減少數量"
             onClick={() => setActualQty(String(Math.max(1, Number(actualQty) - 1)))}
             className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-xl active:scale-95 transition-transform"
           >
@@ -85,6 +86,7 @@ export default function BoughtModal({ item, onConfirm, onClose }: BoughtModalPro
           </button>
           <span className="w-8 text-center text-2xl font-bold">{actualQty}</span>
           <button
+            aria-label="增加數量"
             onClick={() => setActualQty(String(Number(actualQty) + 1))}
             className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-xl active:scale-95 transition-transform"
           >

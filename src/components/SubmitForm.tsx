@@ -458,7 +458,9 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
   return (
     <div className={`rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-opacity ${disabled ? "opacity-50" : ""}`}>
       {/* 文字/網址輸入 */}
+      <label htmlFor="submit-form-input" className="sr-only">輸入商品名稱、描述或網址</label>
       <textarea
+        id="submit-form-input"
         value={text}
         onChange={(e) => { setText(e.target.value); setError(""); }}
         placeholder={"輸入商品名稱、描述或貼上商品網址\n例：樂敦眼藥水、白色戀人 18枚、https://amazon.co.jp/..."}
@@ -476,9 +478,12 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
           <img
             src={imagePreview}
             alt="商品圖片預覽"
+            width={120}
+            height={120}
             className="h-30 w-30 rounded-xl border border-gray-200 object-cover"
           />
           <button
+            aria-label="移除圖片"
             onClick={clearImage}
             className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-gray-800 text-xs text-white shadow-md"
           >
@@ -491,7 +496,7 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
       <div className="mt-3 flex items-stretch gap-2">
         {/* 拍照/選圖按鈕 */}
         <label className={`flex min-h-[48px] cursor-pointer items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 transition-colors hover:border-sakura-300 hover:bg-sakura-50 active:scale-[0.98] ${isDisabled ? "pointer-events-none" : ""}`}>
-          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
           </svg>
@@ -514,7 +519,7 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
         >
           {loading ? (
             <>
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+              <svg aria-hidden="true" className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
                 <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
               </svg>
@@ -522,7 +527,7 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
             </>
           ) : (
             <>
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
               </svg>
               AI 辨識

@@ -300,18 +300,18 @@ export default function AdminPage() {
             <p className="mt-1 text-sm text-gray-500">請使用管理員帳號登入</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-3">
-            <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }}
+            <input type="email" name="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }}
               placeholder="管理員 Email"
               className="w-full rounded-xl border border-gray-200 px-4 py-3 text-base shadow-sm focus:border-sakura-400 focus:outline-none focus:ring-2 focus:ring-sakura-200"
               autoFocus autoComplete="email" />
-            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
+            <input type="password" name="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }}
               placeholder="密碼"
               className="w-full rounded-xl border border-gray-200 px-4 py-3 text-base tracking-widest shadow-sm focus:border-sakura-400 focus:outline-none focus:ring-2 focus:ring-sakura-200"
               autoComplete="current-password" />
             {error && <p className="text-center text-sm text-red-500">{error}</p>}
             <button type="submit" disabled={loginLoading || !email.trim() || !password}
               className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-gray-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
-              {loginLoading ? "登入中..." : "進入管理後台"}
+              {loginLoading ? "登入中…" : "進入管理後台"}
             </button>
           </form>
           <button onClick={() => router.push("/")}
@@ -381,9 +381,10 @@ export default function AdminPage() {
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
               <input
                 type="search"
+                name="user-search"
                 value={userSearchQuery}
                 onChange={(e) => setUserSearchQuery(e.target.value)}
-                placeholder="搜尋帳號名稱..."
+                placeholder="搜尋帳號名稱…"
                 className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm focus:border-sakura-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-sakura-200"
               />
             </div>
@@ -427,6 +428,7 @@ export default function AdminPage() {
                           <div className="flex items-center gap-2">
                             <input
                               type="text"
+                              name="username"
                               value={editingName}
                               onChange={(e) => setEditingName(e.target.value)}
                               className="min-w-0 flex-1 rounded-lg border border-sakura-200 px-3 py-1.5 text-sm focus:border-sakura-400 focus:outline-none focus:ring-1 focus:ring-sakura-200"
@@ -576,16 +578,18 @@ export default function AdminPage() {
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
             <input
               type="search"
+              name="item-search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜尋商品或使用者..."
+              placeholder="搜尋商品或使用者…"
               className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm focus:border-sakura-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-sakura-200"
             />
           </div>
           <select
+            aria-label="排序方式"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortKey)}
-            className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 focus:border-sakura-300 focus:outline-none"
+            className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 focus:border-sakura-300 focus:outline-none focus:ring-1 focus:ring-sakura-200"
           >
             <option value="newest">最新</option>
             <option value="oldest">最舊</option>

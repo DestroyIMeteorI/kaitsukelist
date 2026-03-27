@@ -222,15 +222,15 @@ export default function ManualAddForm({
             <label className="mb-1 block text-xs font-medium text-gray-500">商品圖片（選填）</label>
             {imagePreview ? (
               <div className="relative inline-block">
-                <img src={imagePreview} alt="商品圖片預覽" className="h-20 w-20 rounded-xl border border-gray-200 object-cover" />
-                <button onClick={clearImage} className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-xs text-white shadow-md">
+                <img src={imagePreview} alt="商品圖片預覽" width={80} height={80} className="h-20 w-20 rounded-xl border border-gray-200 object-cover" />
+                <button aria-label="移除圖片" onClick={clearImage} className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-xs text-white shadow-md">
                   ✕
                 </button>
               </div>
             ) : (
               <label className={`flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-500 transition-colors hover:border-sakura-300 hover:bg-sakura-50 ${isDisabled ? "pointer-events-none" : ""}`}>
                 📷 選擇圖片
-                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageSelect} className="hidden" disabled={isDisabled} />
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" disabled={isDisabled} />
               </label>
             )}
           </div>
