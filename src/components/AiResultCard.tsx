@@ -136,11 +136,10 @@ export default function AiResultCard({
         ) : data.product_image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={data.product_image_url}
+            src={`/api/image-proxy?url=${encodeURIComponent(data.product_image_url)}`}
             alt="商品圖片"
             width={112}
             height={112}
-            referrerPolicy="no-referrer"
             className="h-28 w-28 rounded-xl border border-gray-200 object-cover"
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />

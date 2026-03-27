@@ -272,7 +272,10 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
     const conf = CONF_MAP[aiResult.confidence] || CONF_MAP.medium;
     const currentPrice =
       aiResult.variants[selectedVariant]?.price_jpy ?? aiResult.estimated_price_jpy;
-    const displayImage = imagePreview || (!imgError ? aiResult.product_image_url : undefined);
+    const rawProductImage = aiResult.product_image_url
+      ? `/api/image-proxy?url=${encodeURIComponent(aiResult.product_image_url)}`
+      : undefined;
+    const displayImage = imagePreview || (!imgError ? rawProductImage : undefined);
 
     return (
       <div className="animate-fadeIn rounded-2xl border-2 border-sakura-200 bg-white p-4 shadow-lg">
