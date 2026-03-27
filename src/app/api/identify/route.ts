@@ -519,19 +519,37 @@ async function fetchUniqloProduct(url: string): Promise<{
  * Jina.ai Reader：用無頭瀏覽器渲染頁面後回傳乾淨 Markdown。
  * 對所有動態/靜態日本電商均有效，免費無需 API Key。
  */
-async function fetchViaJina(url: string): Promise<string | null> {
+async function fetchViaJina(url: string): Promise<{ markdown: string; imageUrl: string | null } | null> {
   try {
     const res = await fetch(`https://r.jina.ai/${url}`, {
       headers: {
         "Accept": "text/plain",
         "X-Locale": "ja",
+        // 只擷取主要商品區塊，跳過導覽 / footer
+        "X-Target-Selector": "main, [role=main], article, .product, .product-detail, #product, #main, #content",
       },
       signal: AbortSignal.timeout(12000),
     });
     if (!res.ok) return null;
-    const text = await res.text();
-    // 太短代表被擋或頁面無內容
-    return text.length > 300 ? text.slice(0, 7000) : null;
+    const raw = await res.text();
+    if (raw.length < 300) return null;
+
+    // 從 raw markdown 抽取第一張商品圖片（清理前）
+    const imgMatch = raw.match(
+      /!\[[^\]]*\]\((https:\/\/[^)\s]+\.(?:jpg|jpeg|png|webp|gif)[^)]*)\)/i
+    );
+    const imageUrl = imgMatch?.[1]?.replace(/%7Bwidth%7D/g, '1024') ?? null;
+
+    // 清理 markdown：移除圖片、連結語法、超長 encoded URL，只留文字
+    const cleaned = raw
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, '')           // 移除 ![alt](url)
+      .replace(/\[([^\]]*)\]\([^)]+\)/g, '$1')        // [text](url) → text
+      .replace(/\(https?:\/\/[^)]{200,}\)/g, '')       // 移除超長 encoded URL
+      .replace(/^https?:\/\/\S+$/gm, '')               // 移除獨立一行的 URL
+      .replace(/\n{3,}/g, '\n\n')                       // 壓縮空行
+      .trim();
+
+    return cleaned.length > 100 ? { markdown: cleaned.slice(0, 5000), imageUrl } : null;
   } catch {
     return null;
   }
@@ -576,25 +594,24 @@ async function fetchUrlContent(url: string): Promise<{
     !/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(parsedUrl.hostname);
 
   if (isPublicHttps) {
-    const jinaMarkdown = await fetchViaJina(url);
-    if (jinaMarkdown) {
-      // 嘗試從 Jina Markdown 抽取第一張商品圖片 URL
-      const imgMatch = jinaMarkdown.match(
-        /!\[[^\]]*\]\((https:\/\/[^)\s]+\.(?:jpg|jpeg|png|webp|gif)[^)]*)\)/i
-      );
-      const imageFromJina = imgMatch?.[1] ?? null;
-
+    const jinaResult = await fetchViaJina(url);
+    if (jinaResult) {
       return {
-        prompt: `以下是商品網頁執行 JavaScript 後的 Markdown 內容（來源：${new URL(url).hostname}）。
-請從中精確辨識商品資訊，包含商品名稱、所有可選規格及各規格的日幣售價：
+        prompt: `以下是商品網頁的主要商品區塊內容（來源：${parsedUrl.hostname}）。
+請從中精確辨識「此頁面主要販售的商品」資訊。
 
-${jinaMarkdown}`,
-        directResult: (imageFromJina || productCode) ? {
+重要：
+- 價格請使用頁面上標示的「税込」價格
+- 「関連商品」或「おすすめ商品」區塊的商品請忽略，不要當作 variants
+- 如果此頁面只販售一種商品（只有一個價格），variants 只放一個
+
+${jinaResult.markdown}`,
+        directResult: (jinaResult.imageUrl || productCode) ? {
           productName: '',
           priceJpy: 0,
           brand: '',
           description: '',
-          imageUrl: imageFromJina,
+          imageUrl: jinaResult.imageUrl,
           variants: [],
           productCode,
         } : undefined,
