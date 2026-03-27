@@ -299,7 +299,7 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
 
         {/* 品番 + 圖片 */}
         <div className="mb-3 flex items-start gap-3">
-          {displayImage && (
+          {displayImage ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={displayImage}
@@ -308,6 +308,16 @@ export default function SubmitForm({ onResult, onQuickConfirm, userId, disabled 
               className="h-20 w-20 shrink-0 rounded-xl border border-gray-200 object-cover"
               onError={() => setImgError(true)}
             />
+          ) : (
+            <a
+              href={`https://www.google.com/search?q=${encodeURIComponent(`${aiResult.product_name_zh} ${aiResult.product_name_ja || ""}`.trim())}&tbm=isch`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-gray-200 bg-gray-50 text-center text-xs text-gray-400 transition-colors hover:border-sakura-300 hover:bg-sakura-50 hover:text-sakura-500"
+            >
+              <span className="text-base">📷</span>
+              <span>查看圖片</span>
+            </a>
           )}
           <div className="min-w-0 flex-1 space-y-0.5">
             {aiResult.brand && (

@@ -208,12 +208,14 @@ function extractProductFromHtml(html: string, pageUrl: string): {
 
   // 各網站的價格 CSS selector
   const priceSelectors = [
-    '.a-price-whole',                       // Amazon
-    '.price2', '.price--OX_YW',             // 樂天
-    '.elPriceNumber', '.Price__value',       // Yahoo Shopping
-    '.productPrice', '.js_currentPrice',     // Yodobashi
-    '.bcs_price',                            // BIC CAMERA
-    '.price', '.product-price',              // 通用
+    '.a-price-whole',                               // Amazon
+    '.price2', '.price--OX_YW',                     // 樂天
+    '.elPriceNumber', '.Price__value',               // Yahoo Shopping
+    '.productPrice', '.js_currentPrice',             // Yodobashi
+    '.bcs_price',                                    // BIC CAMERA
+    '.price', '.product-price', '.item-price',       // 通用
+    '.selling-price', '.sale-price', '.regular-price',
+    '[class*="price"]', '[class*="Price"]',          // 寬鬆比對
   ];
   let priceFromSelector = 0;
   for (const sel of priceSelectors) {
@@ -222,7 +224,26 @@ function extractProductFromHtml(html: string, pageUrl: string): {
     if (p > 0) { priceFromSelector = p; break; }
   }
 
-  const finalPrice = priceFromMeta || priceFromSelector;
+  // body text regex fallback：找 ¥1,555 / 1,555円 等格式
+  let priceFromBodyText = 0;
+  if (!priceFromMeta && !priceFromSelector) {
+    $('script, style, nav, footer, header, aside').remove();
+    const bodyText = $('body').text().replace(/\s+/g, ' ');
+    const pricePatterns = [
+      /[¥￥](\d{1,3}(?:,\d{3})+)/,           // ¥1,555
+      /(\d{1,3}(?:,\d{3})+)\s*円/,            // 1,555円
+      /(\d{4,6})\s*円/,                        // 1555円（無逗號）
+    ];
+    for (const pat of pricePatterns) {
+      const m = bodyText.match(pat);
+      if (m) {
+        const p = parseInt((m[1] || m[0]).replace(/[^0-9]/g, ''), 10);
+        if (p > 100 && p < 500000) { priceFromBodyText = p; break; }
+      }
+    }
+  }
+
+  const finalPrice = priceFromMeta || priceFromSelector || priceFromBodyText;
   const title = ogTitle || $('title').text().trim();
 
   if (title && title.length > 3) {
